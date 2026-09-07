@@ -1,0 +1,231 @@
+rules_version = '2';
+
+// ---------------------------------------------------------------------------
+// The security boundary.
+//
+// The UI hides buttons; this is what actually enforces the rules. Deploy it
+// with:  firebase deploy --only firestore:rules
+//
+// The model:
+//   * allowedPlayers/{email}  records admins. A signed-in person may read
+//     their OWN row and nothing else, so nobody can enumerate it. Only an
+//     admin may write it. It no longer gates playing: anyone signed in with
+//     Google may play, so this list decides who *runs* the arcade, not who
+//     may enter it.
+//   * matches/{code}          is a room of up to four seats. Only invited
+//     players may open one. A room may only be read or joined by an invited
+//     player, and only the people already in it may change it.
+//   * matches/{code}/signals  is the WebRTC handshake, restricted to the
+//     players in that room. One set of documents per host-guest pair.
+// ---------------------------------------------------------------------------
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- helpers ---------------------------------------------------------
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function myEmail() {
+      return signedIn() && request.auth.token.email != null
+        ? request.auth.token.email.lower()
+        : '';
+    }
+
+    function myGrant() {
+      return get(/databases/$(database)/documents/allowedPlayers/$(myEmail()));
+    }
+
+    // Who may play: anyone signed in with an email address on their account.
+    //
+    // This used to require a row in `allowedPlayers`, and the cost of that was
+    // one document read on every single room operation. Now it is a token
+    // check and costs nothing. Must agree with `canPlay` in
+    // src/domain/identity/session.ts — the client hides what this enforces,
+    // and if the two disagree the client is the one that is wrong.
+    //
+    // Worth being plain about the consequence: the arcade is open to anybody
+    // on the internet with a Google account, and every room is a document in
+    // this project.
+    function mayPlay() {
+      return signedIn() && myEmail() != '';
+    }
+
+    // Administering is still by invitation, and still costs the lookup.
+    function isAdmin() {
+      return signedIn()
+        && myEmail() != ''
+        && exists(/databases/$(database)/documents/allowedPlayers/$(myEmail()))
+        && myGrant().data.role == 'admin';
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    // --- the guest list --------------------------------------------------
+
+    match /allowedPlayers/{email} {
+      // You may check your own row, which is how the client learns whether
+      // you are an admin. You may not read anyone else's, so this is not a
+      // directory of the owner's friends.
+      allow get: if signedIn() && email == myEmail();
+      // Only an admin may list, and only an admin may hand out access.
+      allow list: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // --- rooms -----------------------------------------------------------
+
+    match /matches/{code} {
+
+      function existing() {
+        return resource.data;
+      }
+
+      function incoming() {
+        return request.resource.data;
+      }
+
+      function amIn(data) {
+        return signedIn() && uid() in data.playerIds;
+      }
+
+      // A room holds between two and four seats. Must match MIN_TO_BEGIN and
+      // MAX_SEATS in src/domain/lobby/match.ts.
+      function minSeats() { return 2; }
+      function maxSeats() { return 4; }
+
+      // Seat `i` of the incoming document is empty — or does not exist,
+      // because the room is narrower than that. `||` short-circuits here, so
+      // the index is never read out of range.
+      function incomingSeatEmpty(i) {
+        return incoming().seats.size() <= i || incoming().seats[i] == null;
+      }
+
+      // Whoever was sitting in seat `i` is still sitting there, untouched.
+      // Applied to every seat, this is what stops a joining player from
+      // shuffling the people already in the room into different cars.
+      function seatKept(i) {
+        return existing().seats.size() <= i
+            || existing().seats[i] == null
+            || incoming().seats[i] == existing().seats[i];
+      }
+
+      // Nobody already seated was moved or removed. Enumerated rather than
+      // looped because the rules language has no loop, and four is the most a
+      // room can hold.
+      function everyoneStaysPut() {
+        return seatKept(0) && seatKept(1) && seatKept(2) && seatKept(3);
+      }
+
+      // Any signed-in player may look up a code — that is how joining works.
+      allow get: if mayPlay();
+      // Nobody may list rooms. Codes are found by being told one, not by
+      // scanning for open games.
+      allow list: if false;
+
+      // A brand-new room: you in seat 0, every other seat empty.
+      function openingAsHost() {
+        return incoming().seats.size() >= minSeats()
+            && incoming().seats.size() <= maxSeats()
+            && incoming().seats[0].playerId == uid()
+            && incoming().playerIds == [uid()]
+            && incoming().status == 'open'
+            && incomingSeatEmpty(1)
+            && incomingSeatEmpty(2)
+            && incomingSeatEmpty(3);
+      }
+
+      // Opening a room: you must be signed in, and you must be its host.
+      allow create: if mayPlay() && openingAsHost();
+
+      // An untouched room stops being joinable after this long. Must match
+      // MATCH_STALE_AFTER_MS in src/domain/lobby/match.ts.
+      function staleAfterMs() {
+        return 30 * 60 * 1000;
+      }
+
+      // A room nobody can still be playing: shut down, finished, or long
+      // silent. Its code is fair game for the next host.
+      function isDead(data) {
+        return data.status == 'abandoned'
+            || data.status == 'finished'
+            || data.updatedAt < request.time.toMillis() - staleAfterMs();
+      }
+
+      // Opening a room on a code whose previous room is dead. This is an
+      // *update* as far as Firestore is concerned, because the document is
+      // still there — which is why it cannot be folded into `create` above.
+      // Without this branch, recycling a code fails with permission-denied
+      // the first time a four-character code comes round again.
+      function reclaiming() {
+        return openingAsHost() && isDead(existing());
+      }
+
+      // Taking a free seat in a room that is still admitting people.
+      //
+      // The seats themselves are not checked one by one for *which* one was
+      // filled — that would need a loop. Instead: everyone already seated
+      // stays exactly where they are, and the denormalised `playerIds` grows
+      // by exactly one entry, which must be you because you were not in it
+      // before and are in it after. Between them those pin down the only
+      // change that can have happened.
+      function takingASeat() {
+        return (existing().status == 'open' || existing().status == 'ready')
+            && !(uid() in existing().playerIds)
+            && uid() in incoming().playerIds
+            && incoming().playerIds.hasAll(existing().playerIds)
+            && incoming().playerIds.size() == existing().playerIds.size() + 1
+            && incoming().seats.size() == existing().seats.size()
+            && incoming().seats.size() > existing().playerIds.size()
+            && everyoneStaysPut()
+            && incoming().status == 'ready';
+      }
+
+      // Updating a room. Three legitimate shapes:
+      //   1. an invited player taking a free seat,
+      //   2. someone already in the room advancing or closing it, and
+      //   3. a new host reclaiming a dead code.
+      allow update: if mayPlay() && (
+        takingASeat()
+        ||
+        // 2. a player already in the room changing its state, but never
+        //    rewriting who is in it
+        (amIn(existing())
+          && incoming().seats == existing().seats
+          && incoming().playerIds == existing().playerIds)
+        ||
+        // 3. taking over a code nobody is using any more
+        reclaiming()
+      );
+
+      // Rooms are not deleted; they are marked abandoned so a rejoining
+      // player gets an explanation instead of a missing document.
+      allow delete: if false;
+
+      // --- the WebRTC handshake -----------------------------------------
+
+      match /signals/{document=**} {
+        // Only players in the room may exchange descriptions and candidates.
+        // Documents are named after the guest's seat (`s2-offer`, `s2-host`,
+        // …) so the host's simultaneous handshakes stay apart, but they are
+        // all equally readable by the room — a guest that read another pair's
+        // offer would learn nothing it cannot already see, and the alternative
+        // is a rule that has to parse seat numbers out of document names.
+        // Everything here is transient and deleted once the peers are talking
+        // directly.
+        allow read, write: if mayPlay()
+          && amIn(get(/databases/$(database)/documents/matches/$(code)).data);
+      }
+    }
+
+    // Anything not named above is denied. Firestore's default, restated so
+    // that adding a collection means deciding its rules on purpose.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

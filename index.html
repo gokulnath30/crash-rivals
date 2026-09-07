@@ -1,200 +1,54 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Arcade — pick a game</title>
-<meta name="description" content="A small shelf of browser games. No install, no download, just open one." />
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-  :root{
-    --ink:#0b0718;
-    --ink-2:#160d2b;
-    --bone:#efe7ff;
-    --dim:rgba(239,231,255,.58);
-    --gold:#ffcf5c;
-  }
-  *{box-sizing:border-box}
-  html{-webkit-text-size-adjust:100%}
-  body{margin:0;min-height:100vh;background:var(--ink);color:var(--bone);
-    font-family:"Barlow",system-ui,-apple-system,sans-serif;
-    background-image:
-      radial-gradient(90% 60% at 15% -10%,rgba(120,45,190,.35),transparent 70%),
-      radial-gradient(70% 50% at 95% 0%,rgba(20,120,190,.22),transparent 70%),
-      repeating-linear-gradient(0deg,rgba(255,255,255,.022) 0 1px,transparent 1px 3px);
-    background-attachment:fixed}
-  .wrap{max-width:1120px;margin:0 auto;padding:clamp(22px,5vw,54px) clamp(16px,4vw,32px) 80px}
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>The Arcade — browser games with friends</title>
+    <meta
+      name="description"
+      content="A small shelf of browser games you play with friends. Sign in with Google, open a room, send the link."
+    />
+    <meta name="theme-color" content="#0b0718" />
 
-  header{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end;justify-content:space-between;
-    border-bottom:1px solid rgba(255,255,255,.14);padding-bottom:22px}
-  h1{font-family:"Anton",Impact,sans-serif;font-weight:400;letter-spacing:-.01em;
-    font-size:clamp(38px,8vw,74px);line-height:.9;margin:0}
-  header p{margin:10px 0 0;color:var(--dim);max-width:44ch;font-size:clamp(15px,2vw,17px);line-height:1.6}
-  .count{font-size:14px;color:var(--dim);white-space:nowrap}
+    <!--
+      Installable as an app. The manifest carries the name, the icons and the
+      display mode; `sw.js` is what actually makes the browser offer to
+      install, because Chrome requires a service worker that handles `fetch`.
+    -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/icon-192.png" type="image/png" sizes="192x192" />
 
-  .filters{display:flex;flex-wrap:wrap;gap:8px;margin:26px 0 24px}
-  .chip{font:inherit;font-size:14px;font-weight:500;color:var(--dim);background:transparent;
-    border:1px solid rgba(255,255,255,.2);padding:7px 14px;cursor:pointer;border-radius:999px;
-    transition:color .15s,border-color .15s,background .15s}
-  .chip:hover{color:var(--bone);border-color:rgba(255,255,255,.45)}
-  .chip[aria-pressed="true"]{background:var(--bone);color:var(--ink);border-color:var(--bone)}
-  .chip:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+    <!--
+      iPhone and iPad ignore the manifest almost entirely: the home-screen
+      icon, the standalone display mode and the status bar all come from these
+      instead. Without them, "Add to Home Screen" makes a Safari bookmark
+      rather than something that opens like an app.
+    -->
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Arcade" />
 
-  .shelf{display:grid;gap:clamp(14px,2.4vw,22px);
-    grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
-  .card{position:relative;display:flex;flex-direction:column;justify-content:flex-end;
-    min-height:250px;padding:20px;text-decoration:none;color:inherit;overflow:hidden;
-    background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));
-    border:1px solid rgba(255,255,255,.14);isolation:isolate}
-  .card.featured{grid-column:span 2;min-height:330px}
-  @media (max-width:640px){.card.featured{grid-column:span 1;min-height:270px}}
-  .card::before{content:"";position:absolute;inset:auto -30% -55% -30%;height:75%;
-    background:radial-gradient(60% 100% at 50% 100%,var(--accent),transparent 72%);
-    opacity:.42;z-index:-1;transition:opacity .25s}
-  .card::after{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--accent)}
-  .card:hover::before,.card:focus-visible::before{opacity:.72}
-  .card:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
-  .card .art{position:absolute;inset:0;z-index:-1;opacity:.5}
-  .card h2{font-family:"Anton",Impact,sans-serif;font-weight:400;margin:0;
-    font-size:clamp(26px,3.4vw,40px);line-height:1;letter-spacing:.005em}
-  .card.featured h2{font-size:clamp(34px,5.4vw,58px)}
-  .card p{margin:10px 0 14px;color:var(--dim);font-size:15px;line-height:1.55;max-width:38ch}
-  .meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12.5px;color:var(--dim)}
-  .meta span{border:1px solid rgba(255,255,255,.22);padding:3px 9px;border-radius:999px}
-  .play{margin-top:16px;display:inline-flex;align-items:center;gap:9px;
-    font-weight:600;font-size:15px;color:var(--ink);background:var(--bone);padding:10px 18px;
-    align-self:flex-start;transform:skewX(-12deg)}
-  .play b{display:block;transform:skewX(12deg);font-weight:600}
-  .card:hover .play{background:var(--accent);color:#0b0718}
-  .card.soon{pointer-events:none;opacity:.55}
-  .card.soon .play{background:transparent;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(255,255,255,.28)}
-
-  .empty{color:var(--dim);padding:40px 0;font-size:16px}
-  footer{margin-top:56px;border-top:1px solid rgba(255,255,255,.12);padding-top:20px;
-    color:var(--dim);font-size:14px;line-height:1.7;max-width:60ch}
-  footer code{background:rgba(255,255,255,.08);padding:2px 6px;font-size:13px}
-  @media (prefers-reduced-motion:reduce){*{transition:none !important}}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <header>
-    <div>
-      <h1>Pick a game</h1>
-      <p>Everything here runs in the browser. Nothing to install — open one and play.</p>
-    </div>
-    <div class="count" id="count"></div>
-  </header>
-
-  <div class="filters" id="filters" role="group" aria-label="Filter games by how you play them"></div>
-  <div class="shelf" id="shelf"></div>
-  <p class="empty" id="empty" hidden>No games match that filter yet.</p>
-
-  <footer>
-    Adding a game: drop its folder next to this file, then add one entry to the
-    <code>GAMES</code> list at the top of this page's script. Order in that list is the order on the shelf.
-  </footer>
-</div>
-
-<script>
-/* ===========================================================================
-   THE SHELF — edit this list to add, rename or reorder games.
-   href      : path relative to this file (folder with an index.html, or a file)
-   featured  : true makes the tile double-width; keep it to one or two
-   status    : "ready" or "soon"
-   =========================================================================== */
-const GAMES = [
-  {
-    title: "Shadowbout",
-    tagline: "A 3D fighter with no buttons. Your webcam reads your body, so your punches, kicks and guard are your own.",
-    href: "shadowbout.html",
-    accent: "#ff3f6e",
-    controls: ["Webcam", "Keyboard"],
-    players: "1–2 players",
-    featured: true,
-    status: "ready"
-  },
-  {
-    title: "Crash Rivals",
-    tagline: "Split-screen street duel. Cross the line first, or wreck your rival three times trying.",
-    href: "crash/index.html",
-    accent: "#ffcf5c",
-    controls: ["Keyboard", "Touch"],
-    players: "2 players, one screen",
-    featured: true,
-    status: "ready"
-  },
-];
-
-/* ------------------------------------------------------------------------ */
-const shelf = document.getElementById("shelf");
-const filterBar = document.getElementById("filters");
-const empty = document.getElementById("empty");
-const countEl = document.getElementById("count");
-
-const allControls = [...new Set(GAMES.flatMap(g => g.controls || []))];
-let active = "All";
-
-function art(accent, seed) {
-  // a quiet generated backdrop so each tile looks like its own cabinet
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" preserveAspectRatio="none">
-    <defs><linearGradient id="g" x1="0" y1="1" x2="1" y2="0">
-      <stop offset="0" stop-color="${accent}" stop-opacity=".30"/>
-      <stop offset="1" stop-color="${accent}" stop-opacity="0"/></linearGradient></defs>
-    <rect width="400" height="300" fill="url(#g)"/>
-    ${Array.from({ length: 7 }, (_, i) => {
-      const y = 40 + ((i * 53 + seed * 17) % 240);
-      return `<rect x="${(i * 61 + seed * 29) % 300}" y="${y}" width="${60 + (i * 23 + seed) % 120}"
-        height="2" fill="${accent}" opacity="${0.10 + (i % 3) * 0.06}"/>`;
-    }).join("")}
-  </svg>`;
-  return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
-}
-
-function card(game, index) {
-  const ready = game.status !== "soon";
-  const el = document.createElement(ready ? "a" : "div");
-  el.className = "card" + (game.featured ? " featured" : "") + (ready ? "" : " soon");
-  el.style.setProperty("--accent", game.accent || "#7b6bff");
-  if (ready) el.href = game.href;
-
-  const meta = [...(game.controls || []), game.players].filter(Boolean)
-    .map(t => `<span>${t}</span>`).join("");
-
-  el.innerHTML =
-    `<img class="art" src="${art(game.accent || '#7b6bff', index + 1)}" alt="" aria-hidden="true">
-     <h2>${game.title}</h2>
-     <p>${game.tagline || ""}</p>
-     <div class="meta">${meta}</div>
-     <div class="play"><b>${ready ? "Play" : "In the works"}</b></div>`;
-  return el;
-}
-
-function render() {
-  const list = GAMES.filter(g => active === "All" || (g.controls || []).includes(active));
-  shelf.replaceChildren(...list.map(card));
-  empty.hidden = list.length > 0;
-  const ready = GAMES.filter(g => g.status !== "soon").length;
-  countEl.textContent = ready + (ready === 1 ? " game ready" : " games ready");
-}
-
-["All", ...allControls].forEach(name => {
-  const b = document.createElement("button");
-  b.className = "chip";
-  b.type = "button";
-  b.textContent = name;
-  b.setAttribute("aria-pressed", String(name === active));
-  b.onclick = () => {
-    active = name;
-    [...filterBar.children].forEach(c => c.setAttribute("aria-pressed", String(c.textContent === name)));
-    render();
-  };
-  filterBar.appendChild(b);
-});
-
-render();
-</script>
-</body>
+    <!--
+      Fonts are the one external stylesheet here. Preconnect so the display
+      face is not the last thing to arrive, and `display=swap` so the page is
+      readable while it does.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="app"></div>
+    <noscript>
+      <p style="padding: 24px; font: 16px/1.6 system-ui; color: #efe7ff">
+        These are 3D browser games, so they need JavaScript switched on.
+      </p>
+    </noscript>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>

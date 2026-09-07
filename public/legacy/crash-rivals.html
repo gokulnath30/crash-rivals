@@ -1,0 +1,1323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Crash Rivals — Online Car Battle</title>
+<style>
+  :root{
+    --asphalt:#16181d;
+    --chalk:#f2efe6;
+    --p1:#d94a2b;
+    --p2:#2f9ad6;
+    --warn:#f5c542;
+    --p3:#53c07a;
+    --p4:#c9a227;
+  }
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0; height:100%; width:100%;
+    background:var(--asphalt); overflow:hidden;
+    font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;
+    -webkit-user-select:none; user-select:none;
+    -webkit-tap-highlight-color:transparent; touch-action:none;
+  }
+  #wrap{ position:fixed; inset:0; }
+  canvas#gl{ display:block; width:100%; height:100%; }
+  #split{ position:absolute; background:rgba(10,11,13,.85); pointer-events:none; display:none; }
+
+  .hud{ position:absolute; pointer-events:none; color:var(--chalk); padding:10px 12px;
+        text-shadow:0 2px 6px rgba(0,0,0,.75); display:none; }
+  .hud .who{ font-size:12px; letter-spacing:1.5px; font-weight:700; display:flex; align-items:center; gap:6px; }
+  .chip{ width:10px; height:10px; border-radius:2px; display:inline-block; }
+  .spd{ font-size:34px; font-weight:800; line-height:1; margin-top:2px; font-variant-numeric:tabular-nums; }
+  .spd small{ font-size:11px; font-weight:600; opacity:.6; margin-left:4px; }
+  .meter{ width:150px; margin-top:8px; }
+  .meter .cap{ font-size:10px; opacity:.65; letter-spacing:.8px; margin-bottom:3px; }
+  .track{ height:9px; border-radius:5px; background:rgba(0,0,0,.5); overflow:hidden; border:1px solid rgba(255,255,255,.14); }
+  .fill{ height:100%; width:0%; transition:width .12s linear; }
+  .lives{ display:flex; gap:5px; margin-top:8px; }
+  .life{ width:16px; height:5px; border-radius:2px; background:rgba(255,255,255,.85); }
+  .life.gone{ background:rgba(255,255,255,.18); }
+  .hud.compact{ padding:7px 9px; background:rgba(10,11,13,.55); border-radius:10px;
+                 border:1px solid rgba(255,255,255,.12); gap:3px; }
+  .hud.compact .who{ font-size:10px; letter-spacing:1px; }
+  .hud.compact .spd{ font-size:19px; }
+  .hud.compact .spd small{ font-size:9px; }
+  .hud.compact .meter{ width:128px; }
+  .hud.compact .cap{ font-size:8px; }
+  .hud.compact .track{ height:5px; }
+  /* Damage and lives are the driver's own business; a rival only needs a
+     name, a speed and how far down the road they are. */
+  .hud.compact .meter.dmg, .hud.compact .lives{ display:none; }
+
+  .pad{ position:absolute; pointer-events:none; display:none; }
+  .btn{ position:absolute; pointer-events:auto; border-radius:50%;
+        background:rgba(255,255,255,.10); border:2px solid rgba(255,255,255,.32);
+        color:#fff; font-size:24px; text-align:center; }
+  .btn.on{ background:rgba(255,255,255,.34); }
+  .btn.gas{ font-size:16px; font-weight:800; }
+
+  #center{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+           pointer-events:none; color:#fff; font-size:16vmin; font-weight:900;
+           text-shadow:0 6px 24px rgba(0,0,0,.7); }
+  #netnote{ position:absolute; left:0; right:0; bottom:12px; text-align:center; color:#fff;
+            font-size:12px; opacity:.7; pointer-events:none; text-shadow:0 2px 6px #000; }
+
+  .screen{ position:absolute; inset:0; display:none; flex-direction:column; align-items:center;
+           justify-content:center; gap:14px; text-align:center; padding:24px; color:var(--chalk);
+           background:radial-gradient(circle at 50% 38%, #23262d 0%, #0a0b0d 75%); }
+  .screen.show{ display:flex; }
+  .screen h1{ margin:0; font-size:min(9vw,52px); font-weight:900; letter-spacing:-1px; line-height:1; }
+  .screen h1 .a{ color:var(--p1); } .screen h1 .b{ color:var(--p2); }
+  .screen p{ margin:0; max-width:460px; font-size:14px; line-height:1.6; opacity:.82; }
+  button.go{ padding:14px 30px; font-size:15px; font-weight:800; letter-spacing:.5px; border:0;
+             border-radius:40px; cursor:pointer; color:#101114;
+             background:linear-gradient(90deg,var(--p1),var(--warn)); }
+  button.alt{ background:transparent; color:var(--chalk); border:1.5px solid rgba(255,255,255,.4); }
+  button.go:focus-visible{ outline:3px solid #fff; outline-offset:3px; }
+  .stack{ display:flex; flex-direction:column; gap:10px; width:min(300px,80vw); }
+  .code{ font-family:ui-monospace,monospace; font-size:min(16vw,64px); font-weight:800;
+         letter-spacing:10px; color:var(--warn); margin:2px 0 0 10px; }
+  .dim{ font-size:12px; opacity:.55; max-width:420px; }
+  #tools{ position:absolute; top:8px; left:50%; transform:translateX(-50%); z-index:40;
+          display:flex; gap:8px; }
+  #tools button{ width:34px; height:34px; border-radius:50%; cursor:pointer; font-size:15px;
+                 background:rgba(0,0,0,.42); border:1px solid rgba(255,255,255,.28); color:#fff;
+                 display:grid; place-items:center; padding:0; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="gl"></canvas>
+  <div id="split"></div>
+
+  <div class="hud" id="hud1">
+    <div class="who"><i class="chip" style="background:var(--p1)"></i><span data-name>PLAYER 1</span></div>
+    <div class="spd"><span data-spd>0</span><small>km/h</small></div>
+    <div class="meter dmg"><div class="cap">Damage</div><div class="track"><div class="fill" data-dmg></div></div></div>
+    <div class="meter"><div class="cap">Road ahead</div><div class="track"><div class="fill" data-prog style="background:var(--p1)"></div></div></div>
+    <div class="meter"><div class="cap">Boost</div><div class="track"><div class="fill" data-boost style="background:var(--warn)"></div></div></div>
+    <div class="lives"><i class="life"></i><i class="life"></i><i class="life"></i></div>
+  </div>
+  <div class="hud" id="hud2">
+    <div class="who"><i class="chip" style="background:var(--p2)"></i><span data-name>PLAYER 2</span></div>
+    <div class="spd"><span data-spd>0</span><small>km/h</small></div>
+    <div class="meter dmg"><div class="cap">Damage</div><div class="track"><div class="fill" data-dmg></div></div></div>
+    <div class="meter"><div class="cap">Road ahead</div><div class="track"><div class="fill" data-prog style="background:var(--p2)"></div></div></div>
+    <div class="meter"><div class="cap">Boost</div><div class="track"><div class="fill" data-boost style="background:var(--warn)"></div></div></div>
+    <div class="lives"><i class="life"></i><i class="life"></i><i class="life"></i></div>
+  </div>
+
+  <div class="hud" id="hud3">
+    <div class="who"><i class="chip" style="background:var(--p3)"></i><span data-name>PLAYER 3</span></div>
+    <div class="spd"><span data-spd>0</span><small>km/h</small></div>
+    <div class="meter dmg"><div class="cap">Damage</div><div class="track"><div class="fill" data-dmg></div></div></div>
+    <div class="meter"><div class="cap">Road ahead</div><div class="track"><div class="fill" data-prog style="background:var(--p3)"></div></div></div>
+    <div class="meter"><div class="cap">Boost</div><div class="track"><div class="fill" data-boost style="background:var(--warn)"></div></div></div>
+    <div class="lives"><i class="life"></i><i class="life"></i><i class="life"></i></div>
+  </div>
+
+  <div class="hud" id="hud4">
+    <div class="who"><i class="chip" style="background:var(--p4)"></i><span data-name>PLAYER 4</span></div>
+    <div class="spd"><span data-spd>0</span><small>km/h</small></div>
+    <div class="meter dmg"><div class="cap">Damage</div><div class="track"><div class="fill" data-dmg></div></div></div>
+    <div class="meter"><div class="cap">Road ahead</div><div class="track"><div class="fill" data-prog style="background:var(--p4)"></div></div></div>
+    <div class="meter"><div class="cap">Boost</div><div class="track"><div class="fill" data-boost style="background:var(--warn)"></div></div></div>
+    <div class="lives"><i class="life"></i><i class="life"></i><i class="life"></i></div>
+  </div>
+
+  <div class="pad" id="pad1"></div>
+  <div class="pad" id="pad2"></div>
+  <div class="pad" id="pad3"></div>
+  <div class="pad" id="pad4"></div>
+  <div id="center"></div>
+  <div id="netnote"></div>
+  <div id="tools">
+    <button id="btnMute" title="Sound on/off">🔊</button>
+    <button id="btnFull" title="Full screen">⛶</button>
+  </div>
+
+  <div class="screen show" id="scMenu">
+    <h1><span class="a">CRASH</span> <span class="b">RIVALS</span></h1>
+    <p>One straight road. First to the line wins — or wreck your rivals three times each and take it by knockout.</p>
+    <div class="stack">
+      <button class="go" id="btnSolo">Race the machine</button>
+    </div>
+    <p class="dim">Drive with <b>W A S D</b> or the <b>arrow keys</b>,
+    space or right shift for the handbrake. Drive over a gold pad for a boost.</p>
+    <p class="dim">Racing a friend on another device? Go back to the store and
+    choose <b>Invite a friend</b> — that sends a link and connects you directly.</p>
+  </div>
+
+  <div class="screen" id="scResult">
+    <h1 id="resTitle">Player 1 wins</h1>
+    <p id="resSub"></p>
+    <div class="stack">
+      <button class="go" id="btnAgain">Race again</button>
+      <button class="go alt" id="btnMenu">Back to menu</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+
+const FINISH=2600, ROAD_HW=15, WALL=14.3;
+const MAXV=63, REVV=-13, ACC=27, BRAKE=46, TURN=1.75, KO_LIVES=3;
+/* Boost pads. Laid out so the fast line is never a straight one: catching a
+   pad costs you a lane change, and the pads alternate sides so a chain of
+   them is a slalom rather than a corridor. */
+const BOOST_SECONDS=2.6;      /* how long one pad lasts */
+const BOOST_TOP=1.42;         /* top speed multiplier while boosting */
+const BOOST_ACC=1.9;          /* acceleration multiplier while boosting */
+const PAD_RADIUS=2.6;         /* how close you must pass to pick one up */
+const PAD_RESPAWN=7;          /* seconds before a taken pad returns */
+/* How far off its lane a machine will go for a pad. Deliberately less than
+   the gap between lanes, so two cars never want the same one. */
+const AI_PAD_REACH=2.2;
+const SEND_HZ=20;
+
+const canvas=document.getElementById('gl');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x8fc4e8);
+scene.fog=new THREE.Fog(0x9ec9e6,90,480);
+scene.add(new THREE.HemisphereLight(0xdff0ff,0x4b5a3a,0.95));
+const sun=new THREE.DirectionalLight(0xfff2d5,0.85); sun.position.set(-60,90,40); scene.add(sun);
+
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(900,4200),new THREE.MeshLambertMaterial({color:0x5d7a3d}));
+ground.rotation.x=-Math.PI/2; ground.position.set(0,-0.05,FINISH/2-200); scene.add(ground);
+const road=new THREE.Mesh(new THREE.PlaneGeometry(ROAD_HW*2,3600),new THREE.MeshLambertMaterial({color:0x33363c}));
+road.rotation.x=-Math.PI/2; road.position.set(0,0,FINISH/2-150); scene.add(road);
+
+[-1,1].forEach(s=>{
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(1.5,3600),new THREE.MeshLambertMaterial({color:0x6b6f76}));
+  m.rotation.x=-Math.PI/2; m.position.set(s*(ROAD_HW+0.7),0.01,FINISH/2-150); scene.add(m);
+  const e=new THREE.Mesh(new THREE.PlaneGeometry(0.35,3600),new THREE.MeshBasicMaterial({color:0xe9e4d6}));
+  e.rotation.x=-Math.PI/2; e.position.set(s*(ROAD_HW-0.9),0.02,FINISH/2-150); scene.add(e);
+  const rail=new THREE.Mesh(new THREE.BoxGeometry(0.25,0.55,3400),new THREE.MeshLambertMaterial({color:0xbfc4c9}));
+  rail.position.set(s*(ROAD_HW+0.2),0.85,FINISH/2-150); scene.add(rail);
+});
+(function(){
+  const g=new THREE.BoxGeometry(0.3,0.04,3.2), mat=new THREE.MeshBasicMaterial({color:0xe4ddc8});
+  const lanes=[-5,0,5], step=11, from=-260, to=2900, per=Math.floor((to-from)/step);
+  const mesh=new THREE.InstancedMesh(g,mat,per*lanes.length), mtx=new THREE.Matrix4(); let i=0;
+  for(const lx of lanes) for(let k=0;k<per;k++){ mtx.makeTranslation(lx,0.02,from+k*step); mesh.setMatrixAt(i++,mtx); }
+  scene.add(mesh);
+})();
+(function(){
+  const g=new THREE.BoxGeometry(0.22,1.0,0.22), mat=new THREE.MeshLambertMaterial({color:0x8c9298});
+  const step=7, from=-260, to=2900, per=Math.floor((to-from)/step);
+  const mesh=new THREE.InstancedMesh(g,mat,per*2), mtx=new THREE.Matrix4(); let i=0;
+  for(const s of [-1,1]) for(let k=0;k<per;k++){ mtx.makeTranslation(s*(ROAD_HW+0.2),0.5,from+k*step); mesh.setMatrixAt(i++,mtx); }
+  scene.add(mesh);
+})();
+(function(){
+  const N=240;
+  const trunk=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.28,0.36,3,5),new THREE.MeshLambertMaterial({color:0x5b422c}),N);
+  const crown=new THREE.InstancedMesh(new THREE.ConeGeometry(2.2,6,6),new THREE.MeshLambertMaterial({color:0x2f6b33}),N);
+  const mtx=new THREE.Matrix4(), q=new THREE.Quaternion(), sc=new THREE.Vector3(), pos=new THREE.Vector3();
+  for(let i=0;i<N;i++){
+    const side=i%2?1:-1, x=side*(22+Math.random()*46), z=-180+Math.random()*3050, s=0.7+Math.random()*0.9;
+    sc.set(s,s,s);
+    pos.set(x,1.5*s,z); mtx.compose(pos,q,sc); trunk.setMatrixAt(i,mtx);
+    pos.set(x,5.4*s,z); mtx.compose(pos,q,sc); crown.setMatrixAt(i,mtx);
+  }
+  scene.add(trunk); scene.add(crown);
+})();
+(function(){
+  const mat=new THREE.MeshLambertMaterial({color:0x6a7f8f});
+  for(let i=0;i<16;i++){
+    const h=40+Math.random()*70;
+    const m=new THREE.Mesh(new THREE.ConeGeometry(60+Math.random()*70,h,5),mat);
+    m.position.set((Math.random()<0.5?-1:1)*(180+Math.random()*180),h/2-8,-200+Math.random()*3200);
+    scene.add(m);
+  }
+})();
+(function(){
+  const cv=document.createElement('canvas'); cv.width=256; cv.height=32; const c=cv.getContext('2d');
+  for(let x=0;x<16;x++) for(let y=0;y<2;y++){ c.fillStyle=((x+y)%2)?'#101114':'#f4f1e8'; c.fillRect(x*16,y*16,16,16); }
+  const tex=new THREE.CanvasTexture(cv);
+  const b=new THREE.Mesh(new THREE.BoxGeometry(ROAD_HW*2+2,2.2,0.3),new THREE.MeshBasicMaterial({map:tex}));
+  b.position.set(0,7.4,FINISH); scene.add(b);
+  const pm=new THREE.MeshLambertMaterial({color:0xd9d3c4});
+  [-1,1].forEach(s=>{ const p=new THREE.Mesh(new THREE.BoxGeometry(0.7,8.6,0.7),pm); p.position.set(s*(ROAD_HW+0.6),4.3,FINISH); scene.add(p); });
+  const l=new THREE.Mesh(new THREE.PlaneGeometry(ROAD_HW*2,2.4),new THREE.MeshBasicMaterial({map:tex.clone()}));
+  l.rotation.x=-Math.PI/2; l.position.set(0,0.03,FINISH); scene.add(l);
+})();
+
+function buildCar(bodyColor,accent){
+  const g=new THREE.Group(), paint=new THREE.MeshLambertMaterial({color:bodyColor});
+  const body=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.66,4.4),paint); body.position.y=0.66; g.add(body);
+  const nose=new THREE.Mesh(new THREE.BoxGeometry(1.86,0.34,1.0),paint); nose.position.set(0,0.44,2.0); g.add(nose);
+  const cab=new THREE.Mesh(new THREE.BoxGeometry(1.62,0.62,2.0),new THREE.MeshLambertMaterial({color:0x1b2027}));
+  cab.position.set(0,1.22,-0.25); g.add(cab);
+  const str=new THREE.Mesh(new THREE.BoxGeometry(0.45,0.06,4.3),new THREE.MeshLambertMaterial({color:accent}));
+  str.position.set(0,1.0,0.1); g.add(str);
+  const wing=new THREE.Mesh(new THREE.BoxGeometry(2.05,0.12,0.5),paint); wing.position.set(0,1.3,-2.2); g.add(wing);
+  [-0.75,0.75].forEach(x=>{ const s=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.42,0.12),paint); s.position.set(x,1.05,-2.2); g.add(s); });
+  const tyre=new THREE.CylinderGeometry(0.52,0.52,0.42,12), rub=new THREE.MeshLambertMaterial({color:0x14161a}), wheels=[];
+  [[-1.02,1.45],[1.02,1.45],[-1.02,-1.5],[1.02,-1.5]].forEach(p=>{
+    const w=new THREE.Mesh(tyre,rub); w.rotation.z=Math.PI/2; w.position.set(p[0],0.52,p[1]); g.add(w); wheels.push(w);
+  });
+  const head=new THREE.MeshBasicMaterial({color:0xfff3c9});
+  [-0.62,0.62].forEach(x=>{ const l=new THREE.Mesh(new THREE.BoxGeometry(0.42,0.2,0.1),head); l.position.set(x,0.62,2.48); g.add(l); });
+  const brakeMat=new THREE.MeshBasicMaterial({color:0x5c1410});
+  [-0.62,0.62].forEach(x=>{ const l=new THREE.Mesh(new THREE.BoxGeometry(0.46,0.18,0.1),brakeMat); l.position.set(x,0.72,-2.22); g.add(l); });
+  const sh=new THREE.Mesh(new THREE.PlaneGeometry(2.7,5.2),new THREE.MeshBasicMaterial({color:0,transparent:true,opacity:.28,depthWrite:false}));
+  sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
+  scene.add(g);
+  return {group:g,paint,brakeMat,wheels};
+}
+
+const P_MAX=1100;
+const pPos=new Float32Array(P_MAX*3), pCol=new Float32Array(P_MAX*3), pVel=new Float32Array(P_MAX*3);
+const pLife=new Float32Array(P_MAX), pMaxL=new Float32Array(P_MAX), pBase=new Float32Array(P_MAX*3);
+let pHead=0;
+const pGeo=new THREE.BufferGeometry();
+pGeo.setAttribute('position',new THREE.BufferAttribute(pPos,3));
+pGeo.setAttribute('color',new THREE.BufferAttribute(pCol,3));
+scene.add(new THREE.Points(pGeo,new THREE.PointsMaterial({size:0.85,vertexColors:true,transparent:true,
+  opacity:.95,blending:THREE.AdditiveBlending,depthWrite:false,sizeAttenuation:true})));
+for(let i=0;i<P_MAX;i++) pPos[i*3+1]=-999;
+
+function spawn(x,y,z,n,spd,r,g,b,life,up){
+  for(let k=0;k<n;k++){
+    const i=pHead; pHead=(pHead+1)%P_MAX;
+    pPos[i*3]=x; pPos[i*3+1]=y; pPos[i*3+2]=z;
+    const th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1), s=spd*(0.35+Math.random()*0.75);
+    pVel[i*3]=Math.sin(ph)*Math.cos(th)*s;
+    pVel[i*3+1]=Math.abs(Math.cos(ph))*s*0.85+(up||0);
+    pVel[i*3+2]=Math.sin(ph)*Math.sin(th)*s;
+    const j=0.75+Math.random()*0.35;
+    pBase[i*3]=r*j; pBase[i*3+1]=g*j; pBase[i*3+2]=b*j;
+    pLife[i]=pMaxL[i]=life*(0.6+Math.random()*0.7);
+  }
+}
+function updateParticles(dt){
+  for(let i=0;i<P_MAX;i++){
+    if(pLife[i]<=0) continue;
+    pLife[i]-=dt;
+    if(pLife[i]<=0){ pPos[i*3+1]=-999; pCol[i*3]=pCol[i*3+1]=pCol[i*3+2]=0; continue; }
+    pVel[i*3+1]-=11*dt;
+    pPos[i*3]+=pVel[i*3]*dt; pPos[i*3+1]+=pVel[i*3+1]*dt; pPos[i*3+2]+=pVel[i*3+2]*dt;
+    if(pPos[i*3+1]<0.15){ pPos[i*3+1]=0.15; pVel[i*3+1]*=-0.34; pVel[i*3]*=0.7; pVel[i*3+2]*=0.7; }
+    const t=pLife[i]/pMaxL[i];
+    pCol[i*3]=pBase[i*3]*t; pCol[i*3+1]=pBase[i*3+1]*t*t; pCol[i*3+2]=pBase[i*3+2]*t*t;
+  }
+  pGeo.attributes.position.needsUpdate=true; pGeo.attributes.color.needsUpdate=true;
+}
+function makeFlash(){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(1,14,10),new THREE.MeshBasicMaterial({color:0xffc061,
+    transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false}));
+  m.visible=false; scene.add(m); return {mesh:m,t:0};
+}
+const flashes=[makeFlash(),makeFlash()];
+
+let AC=null, master=null, muted=false;
+function audio(){
+  if(AC===null){
+    try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ AC=false; }
+    if(AC){ master=AC.createGain(); master.gain.value=muted?0:0.9; master.connect(AC.destination); }
+  }
+  if(AC&&AC.state==='suspended'){ try{ AC.resume(); }catch(e){} }
+  return AC||null;
+}
+function noise(dur,vol,freq){
+  const ac=audio(); if(!ac) return;
+  const n=Math.floor(ac.sampleRate*dur), buf=ac.createBuffer(1,n,ac.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/n,2.2);
+  const src=ac.createBufferSource(); src.buffer=buf;
+  const f=ac.createBiquadFilter(); f.type='lowpass'; f.frequency.value=freq;
+  const g=ac.createGain(); g.gain.value=vol;
+  src.connect(f); f.connect(g); g.connect(master); src.start();
+}
+function blip(freq,dur,vol,type){
+  const ac=audio(); if(!ac) return;
+  const o=ac.createOscillator(); o.type=type||'sine'; o.frequency.value=freq;
+  const g=ac.createGain();
+  o.connect(g); g.connect(master);
+  const t=ac.currentTime;
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.linearRampToValueAtTime(vol,t+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.start(t); o.stop(t+dur+0.03);
+}
+const thud=()=>noise(.22,.30,900);
+const boom=()=>{ noise(.9,.55,320); noise(.35,.4,1800); blip(70,0.7,0.35,'sine'); };
+
+// ---- engines: two detuned oscillators through a lowpass, pitch follows speed
+function makeEngine(){
+  const ac=audio(); if(!ac) return null;
+  const o1=ac.createOscillator(); o1.type='sawtooth'; o1.frequency.value=46;
+  const o2=ac.createOscillator(); o2.type='square';   o2.frequency.value=23;
+  const f=ac.createBiquadFilter(); f.type='lowpass'; f.frequency.value=600;
+  const g=ac.createGain(); g.gain.value=0;
+  o1.connect(f); o2.connect(f); f.connect(g); g.connect(master);
+  try{ o1.start(); o2.start(); }catch(e){}
+  return {o1:o1,o2:o2,f:f,g:g};
+}
+function engineUpdate(e,speed,gas,vol){
+  const ac=audio(); if(!ac||!e) return;
+  const t=ac.currentTime, s=Math.abs(speed), hz=46+s*3.4;
+  e.o1.frequency.setTargetAtTime(hz,t,0.06);
+  e.o2.frequency.setTargetAtTime(hz*0.5,t,0.06);
+  e.f.frequency.setTargetAtTime(420+s*26,t,0.1);
+  e.g.gain.setTargetAtTime((0.018+(gas?0.030:0.006)+s*0.0007)*vol,t,0.09);
+}
+// ---- tyre scrub: looping filtered noise, gain rises when sliding
+let skid=null;
+function skidSet(amount){
+  const ac=audio(); if(!ac) return;
+  if(!skid){
+    const n=Math.floor(ac.sampleRate*1.2), buf=ac.createBuffer(1,n,ac.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<n;i++) d[i]=Math.random()*2-1;
+    const src=ac.createBufferSource(); src.buffer=buf; src.loop=true;
+    const f=ac.createBiquadFilter(); f.type='bandpass'; f.frequency.value=2200; f.Q.value=1.6;
+    const g=ac.createGain(); g.gain.value=0;
+    src.connect(f); f.connect(g); g.connect(master);
+    try{ src.start(); }catch(e){}
+    skid={g:g};
+  }
+  skid.g.gain.setTargetAtTime(Math.min(0.16,amount),ac.currentTime,0.08);
+}
+function setMuted(v){
+  muted=v; audio();
+  if(master) master.gain.value=muted?0:0.9;
+  const b=document.getElementById('btnMute');
+  if(b) b.textContent=muted?'🔇':'🔊';
+}
+
+function fxBlast(x,z,idx){
+  spawn(x,1.1,z,150,22,1,0.62,0.16,1.25,5);
+  spawn(x,1.1,z,90,13,1,0.95,0.65,0.75,3);
+  spawn(x,1.1,z,70,9,0.32,0.30,0.28,2.2,4);
+  const f=flashes[idx]||flashes[0]; f.t=0.45; f.mesh.visible=true; f.mesh.position.set(x,1.1,z);
+  boom();
+}
+function fxSpark(x,z,mag){ spawn(x,0.9,z,Math.min(30,6+mag*1.6),5+mag*0.4,1,0.8,0.28,0.45,2); thud(); }
+
+/* Deterministic, so every browser in a race agrees where the pads are
+   without any of it having to be sent over the wire. */
+const PADS=[];
+(function(){
+  const lanes=[-5,0,5];
+  let i=0;
+  for(let z=220; z<FINISH-80; z+=110){
+    PADS.push({x:lanes[i%3], z:z, cool:0});
+    PADS.push({x:lanes[(i+2)%3], z:z+45, cool:0});
+    i++;
+  }
+})();
+const padMesh=PADS.map(function(pad){
+  const g=new THREE.Group();
+  const base=new THREE.Mesh(new THREE.BoxGeometry(3.4,0.06,3.4),
+    new THREE.MeshBasicMaterial({color:0xffcf5c,transparent:true,opacity:0.5}));
+  base.position.y=0.03; g.add(base);
+  /* A chevron pointing up the road, so it reads as "go" at speed. */
+  [[0,-0.55],[0,0.35]].forEach(function(o){
+    const v=new THREE.Mesh(new THREE.BoxGeometry(2.2,0.1,0.5),
+      new THREE.MeshBasicMaterial({color:0xfff3c9}));
+    v.position.set(o[0],0.09,o[1]); g.add(v);
+  });
+  g.position.set(pad.x,0,pad.z);
+  scene.add(g);
+  return g;
+});
+
+function padsReset(){
+  for(let i=0;i<PADS.length;i++){ PADS[i].cool=0; padMesh[i].visible=true; }
+}
+
+function takePad(i){
+  const pad=PADS[i];
+  if(!pad) return;
+  pad.cool=PAD_RESPAWN;
+  padMesh[i].visible=false;
+}
+
+/* Guests do not decide pickups, but their pads still have to reappear. */
+function padsRespawn(dt){
+  for(let i=0;i<PADS.length;i++){
+    const pad=PADS[i];
+    if(pad.cool<=0) continue;
+    pad.cool-=dt;
+    if(pad.cool<=0) padMesh[i].visible=true;
+  }
+}
+
+/* Host only: hands out boosts and tells everyone which pads went. */
+function padsUpdate(dt){
+  for(let i=0;i<PADS.length;i++){
+    const pad=PADS[i];
+    if(pad.cool>0){
+      pad.cool-=dt;
+      if(pad.cool<=0) padMesh[i].visible=true;
+      continue;
+    }
+    for(let j=0;j<players.length;j++){
+      const p=players[j];
+      if(p.dead||p.finished) continue;
+      if(Math.abs(p.x-pad.x)>PAD_RADIUS) continue;
+      if(Math.abs(p.z-pad.z)>PAD_RADIUS) continue;
+      p.boost=BOOST_SECONDS;
+      takePad(i);
+      events.push(['b',i]);
+      boostChime();
+      break;
+    }
+  }
+}
+
+/* A rising blip, so a pickup is audible even when it is off to the side. */
+function boostChime(){
+  const ac=audio(); if(!ac) return;
+  const o=ac.createOscillator(), g=ac.createGain();
+  o.type='triangle';
+  o.frequency.setValueAtTime(520,ac.currentTime);
+  o.frequency.exponentialRampToValueAtTime(1180,ac.currentTime+0.14);
+  g.gain.setValueAtTime(0.0001,ac.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.16,ac.currentTime+0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001,ac.currentTime+0.2);
+  o.connect(g).connect(master); o.start(); o.stop(ac.currentTime+0.22);
+}
+
+function makePlayer(id,colorHex,accent,startX){
+  return { id,startX,colorHex, car:buildCar(colorHex,accent),
+    cam:new THREE.PerspectiveCamera(64,1,0.3,900),
+    x:startX,z:0,a:0,v:0, dmg:0,wrecks:0,dead:false,deadT:0,invuln:0, boost:0, out:false,
+    ai:false, lane:startX, skill:1,
+    finished:false,finishTime:0, bumpCool:0,smokeT:0,shake:0,
+    camPos:new THREE.Vector3(startX,4,-9) };
+}
+/* Start positions double as the machines' lanes, so each sits on one of the
+   three pad lines and the player starts clear of all of them. */
+const P1=makePlayer(1,0xd94a2b,0xf3d9a0,-10);
+const P2=makePlayer(2,0x2f9ad6,0xdff0ff,-5);
+const P3=makePlayer(3,0x53c07a,0xe2f7e8,0);
+const P4=makePlayer(4,0xc9a227,0xfff3c9,5);
+const ALL=[P1,P2,P3,P4];
+/* Result-screen text colours, taken from the cars themselves so a livery
+   change cannot leave the two disagreeing. */
+const SEAT_HEX=ALL.map(function(p){ return '#'+p.colorHex.toString(16).padStart(6,'0'); });
+/* Who is actually racing. Two for an online match, and whatever the local
+   menu asked for otherwise — every loop below runs over this rather than
+   over the four, so an unused car simply is not in the world. */
+let players=[P1,P2];
+
+/** How many cars are on the road this race. The rest are parked out of sight. */
+function setRacers(n){
+  players=ALL.slice(0,n);
+  ALL.forEach(function(p,i){ p.car.group.visible = i<n; });
+}
+function resetPlayer(p){
+  p.x=p.startX; p.z=0; p.a=0; p.v=0; p.dmg=0; p.wrecks=0; p.dead=false; p.deadT=0;
+  p.invuln=0; p.finished=false; p.finishTime=0; p.shake=0; p.boost=0; p.out=false;
+  p.lane=p.startX;
+  /* 0.84 to 0.96 of the car's top speed, so they are beatable and not
+     identical. */
+  p.skill=0.84+0.04*(p.id-1);
+  p.car.group.visible=true; p.camPos.set(p.startX,4,-9);
+}
+
+const kb={1:{f:0,b:0,l:0,r:0,h:0},2:{f:0,b:0,l:0,r:0,h:0},
+          3:{f:0,b:0,l:0,r:0,h:0},4:{f:0,b:0,l:0,r:0,h:0}};
+const tp={1:{f:0,b:0,l:0,r:0,h:0},2:{f:0,b:0,l:0,r:0,h:0},
+          3:{f:0,b:0,l:0,r:0,h:0},4:{f:0,b:0,l:0,r:0,h:0}};
+/*
+ * The last input each guest sent, by seat.
+ *
+ * One slot per seat rather than one shared object: with three guests, a single
+ * `netIn` would have whichever packet arrived most recently drive all three
+ * cars. The seat is supplied by the arcade bridge, which knows it from the
+ * link the message came in on — a guest cannot claim someone else's seat.
+ */
+const netIn=[];
+function netInFor(seat){
+  let held=netIn[seat];
+  if(!held){ held={f:0,b:0,l:0,r:0,h:0}; netIn[seat]=held; }
+  return held;
+}
+/** A car's seat is its position in the grid. */
+function seatOfCar(p){ return players.indexOf(p); }
+const or2=(a,b)=>({f:a.f|b.f,b:a.b|b.b,l:a.l|b.l,r:a.r|b.r,h:a.h|b.h});
+const padOf=id=>or2(kb[id],tp[id]);
+/* Online, either set of keys drives your own car, so a player does not have
+   to care which seat they were given. */
+const anyPad=()=>[1,2,3,4].map(function(i){ return or2(kb[i],tp[i]); })
+  .reduce(function(a,b){ return or2(a,b); });
+
+const KEYMAP={KeyW:[1,'f'],KeyS:[1,'b'],KeyA:[1,'l'],KeyD:[1,'r'],Space:[1,'h'],
+  ArrowUp:[2,'f'],ArrowDown:[2,'b'],ArrowLeft:[2,'l'],ArrowRight:[2,'r'],ShiftRight:[2,'h'],
+  /* Two more clusters, far enough apart on the keyboard that four pairs of
+     hands are not fighting for the same keys. */
+  KeyI:[3,'f'],KeyK:[3,'b'],KeyJ:[3,'l'],KeyL:[3,'r'],KeyU:[3,'h'],
+  Numpad8:[4,'f'],Numpad5:[4,'b'],Numpad4:[4,'l'],Numpad6:[4,'r'],Numpad0:[4,'h']};
+addEventListener('keydown',e=>{ const m=KEYMAP[e.code]; if(m){ kb[m[0]][m[1]]=1; e.preventDefault(); } },{passive:false});
+addEventListener('keyup',e=>{ const m=KEYMAP[e.code]; if(m){ kb[m[0]][m[1]]=0; e.preventDefault(); } },{passive:false});
+
+function buildPad(host,pid,big){
+  const s=big?76:64;
+  const defs=[['l','◀','left:16px;bottom:22px;'],['r','▶','left:'+(s+34)+'px;bottom:22px;'],
+              ['b','▼','right:'+(s+34)+'px;bottom:22px;'],['f','GAS','right:16px;bottom:22px;']];
+  host.innerHTML='';
+  defs.forEach(function(d){
+    const k=d[0], label=d[1], css=d[2];
+    const b=document.createElement('div');
+    b.className='btn'+(k==='f'?' gas':''); b.textContent=label;
+    b.setAttribute('style',css+'width:'+s+'px;height:'+s+'px;line-height:'+(s-4)+'px;');
+    const on=e=>{ tp[pid][k]=1; b.classList.add('on'); if(b.setPointerCapture){ try{b.setPointerCapture(e.pointerId);}catch(err){} } e.preventDefault(); };
+    const off=()=>{ tp[pid][k]=0; b.classList.remove('on'); };
+    b.addEventListener('pointerdown',on); b.addEventListener('pointerup',off);
+    b.addEventListener('pointercancel',off); b.addEventListener('pointerleave',off);
+    host.appendChild(b);
+  });
+}
+const isTouch=matchMedia('(hover:none)').matches||('ontouchstart' in window);
+
+let mode='menu';
+let me=P1, foe=P2;
+/* One viewport per racing car. Rebuilt by `layout`, read by the draw loop. */
+let VPS=[{x:0,y:0,w:1,h:1},{x:0,y:0,w:1,h:1}];
+const SEAT_COLOUR=['var(--p1)','var(--p2)','var(--p3)','var(--p4)'];
+const SEATS=4;
+const hudEl=function(i){ return document.getElementById('hud'+(i+1)); };
+const padEl=function(i){ return document.getElementById('pad'+(i+1)); };
+const hud1=document.getElementById('hud1'), hud2=document.getElementById('hud2');
+const pad1=document.getElementById('pad1'), pad2=document.getElementById('pad2');
+const splitEl=document.getElementById('split');
+
+function layout(){
+  const w=innerWidth,h=innerHeight;
+  renderer.setSize(w,h,false);
+
+  if(mode==='menu'){
+    for(let i=0;i<SEATS;i++){
+      const hd=hudEl(i); if(hd) hd.style.display='none';
+      const pd=padEl(i); if(pd) pd.style.display='none';
+    }
+    splitEl.style.display='none';
+    P1.cam.aspect=w/h; P1.cam.updateProjectionMatrix();
+    VPS=[{x:0,y:0,w:w,h:h}];
+    return;
+  }
+
+  /*
+   * One view, always: the car you are driving, filling the screen.
+   *
+   * The split screen this replaced divided the display between people sitting
+   * at one keyboard. Every race now has exactly one local driver — the rest
+   * are machines or other browsers — so there is nothing to divide, and a
+   * quarter of a screen was a poor way to watch a race anyway.
+   */
+  VPS=[{x:0,y:0,w:w,h:h}];
+  me.cam.aspect=w/h; me.cam.updateProjectionMatrix();
+  splitEl.style.display='none';
+
+  /*
+   * Gauges are for people, not machines.
+   *
+   * A machine's speed and damage is not information you can act on — you can
+   * see the car — and three of them stacked down the edge of the screen is
+   * three quarters of the display spent on cars nobody is driving. So a solo
+   * race shows one gauge, and a room shows one per person in it.
+   */
+  const rivals=players.filter(function(p){ return p!==me && !p.ai; });
+
+  const own=hudEl(0);
+  if(own){
+    own.style.display='block';
+    own.classList.remove('compact');
+    Object.assign(own.style,{left:'0px',right:'',top:'0px',width:w+'px',height:h+'px'});
+    own.querySelector('[data-name]').textContent='YOU';
+    own.querySelector('.chip').style.background=SEAT_COLOUR[players.indexOf(me)];
+    own.querySelector('[data-prog]').style.background=SEAT_COLOUR[players.indexOf(me)];
+  }
+
+  /*
+   * The rest stack down the right. Measured rather than guessed: a fixed slot
+   * height is a guess about how tall the gauge renders, and when the guess is
+   * short the gauges silently overlap each other.
+   */
+  let top=10;
+  for(let i=1;i<SEATS;i++){
+    const hd=hudEl(i);
+    const pd=padEl(i);
+    if(pd) pd.style.display='none';
+    if(!hd) continue;
+    const rival=rivals[i-1];
+    if(!rival){ hd.style.display='none'; continue; }
+    hd.style.display='block';
+    hd.classList.add('compact');
+    Object.assign(hd.style,{left:'',right:'10px',top:top+'px',width:'',height:''});
+    const seat=players.indexOf(rival);
+    hd.querySelector('[data-name]').textContent=rival.ai?('CPU '+rival.id):('P'+rival.id);
+    hd.querySelector('.chip').style.background=SEAT_COLOUR[seat];
+    hd.querySelector('[data-prog]').style.background=SEAT_COLOUR[seat];
+    top+=hd.offsetHeight+8;
+  }
+
+  if(isTouch){
+    const pd=padEl(0);
+    if(pd){
+      pd.style.display='block'; buildPad(pd,me.id,true);
+      Object.assign(pd.style,{left:'0px',top:'0px',width:w+'px',height:h+'px'});
+    }
+  }
+}
+addEventListener('resize',layout);
+
+let state='menu';
+let countdown=0, raceTime=0;
+const centerEl=document.getElementById('center');
+const noteEl=document.getElementById('netnote');
+const events=[];
+
+function show(id){
+  // Looked up rather than listed by name: the two online screens were removed
+  // when rooms moved to the store, and a hard-coded list would have thrown on
+  // the missing ones the first time any screen was shown.
+  document.querySelectorAll('.screen').forEach(function(el){
+    el.classList.toggle('show', el.id===id);
+  });
+}
+function startRound(){
+  players.forEach(resetPlayer);
+  padsReset();
+  raceTime=0; countdown=3.999; state='countdown'; lastBeep=99;
+  show(null); layout();
+}
+function finish(winner,reason){
+  state='over'; centerEl.textContent='';
+  const t=document.getElementById('resTitle');
+  t.textContent = (winner===me) ? 'You win' : (winner.ai ? ('CPU '+winner.id+' wins') : ('Player '+winner.id+' wins'));
+  t.style.color = winner.id===1?'#d94a2b':'#2f9ad6';
+  document.getElementById('resSub').textContent=reason;
+  document.getElementById('btnAgain').style.display=(mode==='guest')?'none':'block';
+  show('scResult');
+  if(mode==='host') send({t:'over',w:winner.id,s:reason});
+}
+
+const fwd=p=>({x:Math.sin(p.a),z:Math.cos(p.a)});
+
+function damage(p,amt){
+  if(p.dead||p.invuln>0) return;
+  p.dmg=Math.min(100,p.dmg+amt);
+  if(p.dmg>=100) explode(p);
+}
+function explode(p){
+  p.dead=true; p.deadT=2.6; p.v=0; p.wrecks++; p.car.group.visible=false; p.shake=1.4;
+  fxBlast(p.x,p.z,p.id-1);
+  events.push(['x',Math.round(p.x*10)/10,Math.round(p.z*10)/10,p.id-1]);
+  if(p.wrecks>=KO_LIVES){
+    /* Out for good: no respawn. With two cars that is the old behaviour —
+       one wrecked, the other wins. With four it is an elimination, and the
+       race carries on between whoever is left. */
+    p.out=true;
+    const left=players.filter(function(o){ return !o.out; });
+    if(left.length===1){
+      finish(left[0],'Last car running. '+p.wrecks+' wrecks finished Player '+p.id+'.');
+    } else if(left.length===0){
+      finish(p,'Everybody wrecked out.');
+    }
+  }
+}
+function respawn(p){
+  p.dead=false; p.dmg=45; p.invuln=1.6; p.a=0; p.v=6;
+  p.x=Math.max(-10,Math.min(10,p.x)); p.z=Math.max(0,p.z-14); p.car.group.visible=true;
+}
+function inputFor(p){
+  if(p===me) return anyPad();
+  if(p.ai) return aiInput(p);
+  if(mode==='host') return netInFor(seatOfCar(p));
+  // A guest simulates nobody but itself; the rest arrive in snapshots.
+  return {f:0,b:0,l:0,r:0,h:0};
+}
+
+/*
+ * The machine drivers.
+ *
+ * Not trying to be quick — trying to be *company*. Each holds a lane of its
+ * own and only detours for a boost pad that is nearly in front of it. That
+ * lane discipline is the whole trick: an earlier version had every car pick
+ * the nearest pad by cost, so all three chose the same one, converged on it,
+ * bounced off each other and spent the race crawling.
+ *
+ * Each carries a small permanent handicap so the player can win and the three
+ * of them do not cross the line together.
+ */
+function aiInput(p){
+  const out={f:1,b:0,l:0,r:0,h:0};
+  if(state!=='race'||p.finished||p.dead) return out;
+
+  /* Its own lane, with a slow sway so it does not look rail-guided. */
+  let wantX=p.lane+Math.sin((raceTime+p.id*1.7)*0.6)*1.1;
+
+  /* A pad, but only one it is nearly lined up with already. */
+  let bestZ=1e9;
+  for(let i=0;i<PADS.length;i++){
+    const pad=PADS[i];
+    if(pad.cool>0) continue;
+    const ahead=pad.z-p.z;
+    if(ahead<5||ahead>90) continue;
+    if(Math.abs(pad.x-p.lane)>AI_PAD_REACH) continue;
+    if(ahead<bestZ){ bestZ=ahead; wantX=pad.x; }
+  }
+
+  /* Never near the rails; a wall scrape costs far more than a pad is worth. */
+  wantX=Math.max(-ROAD_HW+3.5,Math.min(ROAD_HW-3.5,wantX));
+
+  /* Ease past whoever is directly in front, and lift only when genuinely
+     about to run into the back of them. */
+  for(let i=0;i<players.length;i++){
+    const o=players[i];
+    if(o===p||o.dead) continue;
+    const ahead=o.z-p.z;
+    if(ahead<0.5||ahead>14) continue;
+    if(Math.abs(o.x-p.x)>2.8) continue;
+    wantX = p.x + (p.x<o.x ? -3.5 : 3.5);
+    if(ahead<7&&p.v>o.v+9) out.f=0;
+    break;
+  }
+
+  /*
+   * Mind the sign. `stepCar` does `p.a -= steer * TURN`, and heading feeds x
+   * through sin(a) — so the *right* input walks the car toward negative x.
+   * Reading that backwards is not a car that wanders: it is a car that steers
+   * away from where it wants to be, holds the input, and parks on the wall.
+   */
+  const drift=wantX-p.x;
+  if(drift>0.6) out.l=1;
+  else if(drift<-0.6) out.r=1;
+
+  /* The handicap: it will not push past this share of the car's top speed. */
+  if(p.v>MAXV*p.skill) out.f=0;
+  return out;
+}
+function stepCar(p,dt){
+  const k=inputFor(p);
+  if(p.dead){
+    p.deadT-=dt;
+    /* Eliminated cars stay wrecked; everyone else comes back. */
+    if(p.deadT<=0&&state==='race'&&!p.out) respawn(p);
+    return;
+  }
+  if(p.invuln>0) p.invuln-=dt;
+
+  const drive = state==='race' && !p.finished;
+  const gas=drive&&k.f?1:0, brk=drive&&k.b?1:0, hand=drive&&k.h?1:0;
+
+  if(p.boost>0) p.boost-=dt;
+  const boosting = p.boost>0 && drive;
+  if(gas) p.v+=ACC*dt*(1-0.55*(p.dmg/100))*(boosting?BOOST_ACC:1);
+  if(brk){ if(p.v>0.4) p.v-=BRAKE*dt; else p.v-=ACC*0.55*dt; }
+  if(hand) p.v-=BRAKE*1.15*dt*(p.v>0?1:-1);
+  if(!gas&&!brk) p.v-=p.v*0.55*dt;
+  p.v-=p.v*Math.abs(p.v)*0.00028;
+  if(!drive) p.v-=p.v*1.4*dt;
+  if(Math.abs(p.x)>ROAD_HW-1.2) p.v-=p.v*1.5*dt;
+  /* A boost lifts the ceiling as well as the climb, otherwise it is spent
+     the moment you are already flat out — which is exactly when you want it. */
+  p.v=Math.max(REVV,Math.min(boosting?MAXV*BOOST_TOP:MAXV,p.v));
+
+  const steer=(k.r?1:0)-(k.l?1:0);
+  if(drive&&steer!==0){
+    const grip=Math.min(1,Math.abs(p.v)/7);
+    const fade=1-0.42*Math.min(1,Math.abs(p.v)/MAXV);
+    p.a-=steer*TURN*grip*fade*(p.v>=0?1:-1)*dt*(hand?1.5:1);
+  }
+  p.a=Math.max(-1.15,Math.min(1.15,p.a));
+  if(steer===0) p.a-=p.a*1.2*dt;
+
+  const f=fwd(p);
+  p.x+=f.x*p.v*dt; p.z+=f.z*p.v*dt;
+
+  if(p.bumpCool>0) p.bumpCool-=dt;
+  if(Math.abs(p.x)>WALL){
+    p.x=(p.x<0?-1:1)*WALL;
+    const hit=Math.abs(p.v*Math.sin(p.a));
+    p.v*=0.86; p.a*=-0.35;
+    if(hit>3&&p.bumpCool<=0){
+      p.bumpCool=0.22; damage(p,hit*1.1); p.shake=Math.min(1,hit/16);
+      spawn(p.x,0.8,p.z,14,7,1,.85,.35,.4,1); thud();
+      events.push(['c',Math.round(p.x*10)/10,Math.round(p.z*10)/10,Math.round(hit)]);
+    }
+  }
+  if(!p.finished&&p.z>=FINISH){
+    p.finished=true; p.finishTime=raceTime;
+    if(state==='race'){
+      /* The margin is over whoever was actually closest behind, which with
+         four cars is a different question from "the other one". */
+      let best=null;
+      players.forEach(function(o){
+        if(o===p) return;
+        if(best===null||o.z>best.z) best=o;
+      });
+      const clear=best?Math.round(Math.max(0,p.z-best.z)):0;
+      finish(p,'Crossed the line in '+p.finishTime.toFixed(2)+'s, '+
+        clear+' m clear. Wrecks taken: '+p.wrecks+'.');
+    }
+  }
+  if(p.dmg>55){
+    p.smokeT-=dt;
+    if(p.smokeT<=0){
+      p.smokeT=0.055; const g=p.dmg>85?0.16:0.34;
+      spawn(p.x-f.x*2,1.1,p.z-f.z*2,2,1.6,g,g,g,1.3,2.4);
+      if(p.dmg>85) spawn(p.x-f.x*2,1.1,p.z-f.z*2,1,2.4,1,.5,.1,.5,3);
+    }
+  }
+  if(boosting){
+    /* Flame out of the back, so a boosting rival is obvious from behind. */
+    p.smokeT-=dt;
+    if(p.smokeT<=0){
+      p.smokeT=0.03;
+      spawn(p.x-f.x*2.4,0.7,p.z-f.z*2.4,3,5,1,.72,.25,.35,1.6);
+    }
+  }
+  if(p.shake>0) p.shake-=dt*1.6;
+}
+function circles(p){ const f=fwd(p); return [{x:p.x+f.x*1.25,z:p.z+f.z*1.25},{x:p.x-f.x*1.25,z:p.z-f.z*1.25}]; }
+/* Every pair, rather than the one pair there used to be. Four cars on one
+   road means six possible contacts, and a race where only two of them
+   registered would be a strange one. */
+function collide(){
+  for(let i=0;i<players.length;i++)
+    for(let j=i+1;j<players.length;j++)
+      collidePair(players[i],players[j]);
+}
+
+function collidePair(P1,P2){
+  if(P1.dead||P2.dead) return;
+  const R=1.28, MIN=R*2, c1=circles(P1), c2=circles(P2);
+  let best=null;
+  for(const a of c1) for(const b of c2){
+    const dx=b.x-a.x, dz=b.z-a.z, d=Math.sqrt(dx*dx+dz*dz);
+    if(d<MIN&&(!best||d<best.d)) best={d:d,dx:dx,dz:dz,ax:a.x,az:a.z};
+  }
+  if(!best) return;
+  const d=Math.max(0.001,best.d), nx=best.dx/d, nz=best.dz/d, ov=MIN-d;
+  P1.x-=nx*ov*.5; P1.z-=nz*ov*.5; P2.x+=nx*ov*.5; P2.z+=nz*ov*.5;
+  const f1=fwd(P1), f2=fwd(P2);
+  const closing=(P1.v*f1.x-P2.v*f2.x)*nx+(P1.v*f1.z-P2.v*f2.z)*nz;
+  if(closing<=0) return;
+  const d1=f1.x*nx+f1.z*nz, d2=f2.x*nx+f2.z*nz;
+  P1.v-=closing*.62*d1; P2.v+=closing*.62*d2;
+  P1.a+=(nx>0?-1:1)*closing*.006; P2.a+=(nx>0?1:-1)*closing*.006;
+  if(P1.bumpCool<=0&&P2.bumpCool<=0&&closing>1.6){
+    P1.bumpCool=P2.bumpCool=0.14;
+    damage(P1,closing*(1.55-1.05*Math.max(0,d1)));
+    damage(P2,closing*(1.55-1.05*Math.max(0,-d2)));
+    P1.shake=P2.shake=Math.min(1,closing/14);
+    const cx=best.ax+nx*R, cz=best.az+nz*R;
+    fxSpark(cx,cz,closing);
+    events.push(['c',Math.round(cx*10)/10,Math.round(cz*10)/10,Math.round(closing)]);
+  }
+}
+
+const tmpCol=new THREE.Color(), dark=new THREE.Color(0x241a16);
+function syncCar(p,dt){
+  const c=p.car;
+  c.group.position.set(p.x,0,p.z);
+  c.group.rotation.y=p.a; c.group.rotation.z=-p.a*0.35;
+  const spin=p.v*dt/0.52; for(const w of c.wheels) w.rotation.x+=spin;
+  tmpCol.setHex(p.colorHex).lerp(dark,(p.dmg/100)*0.75);
+  c.paint.color.copy(tmpCol);
+  const brk = (p===me) ? anyPad().b : 0;
+  c.brakeMat.color.setHex(brk?0xff3b22:0x5c1410);
+  if(p.dead) c.group.visible=false;
+  else if(p.invuln>0) c.group.visible=Math.floor(p.invuln*12)%2===0;
+  else c.group.visible=true;
+}
+/*
+ * A chevron floating over the car you are driving.
+ *
+ * Four cars in one view and no split to tell them apart: in a close race the
+ * rivals sit nearer the camera than your own car does and therefore draw
+ * *larger* than it, which makes colour alone a poor way to find yourself.
+ */
+const marker=(function(){
+  const cone=new THREE.Mesh(
+    new THREE.ConeGeometry(0.5,0.85,4),
+    new THREE.MeshBasicMaterial({color:0xffffff}));
+  cone.rotation.x=Math.PI;   /* point down, at the roof */
+  cone.renderOrder=3;
+  scene.add(cone);
+  return cone;
+})();
+function syncMarker(p){
+  marker.visible = state!=='menu' && !p.dead && !p.finished;
+  if(!marker.visible) return;
+  marker.material.color.setHex(p.colorHex);
+  marker.position.set(p.x,2.5+Math.sin(raceTime*3.2)*0.16,p.z);
+  marker.rotation.y=raceTime*1.6;
+}
+
+const camWant=new THREE.Vector3();
+function syncCam(p,dt){
+  const f=fwd(p), back=p.dead?13:8.6+Math.min(3.2,Math.abs(p.v)*0.055);
+  camWant.set(p.x-f.x*back,p.dead?6.2:3.9,p.z-f.z*back);
+  p.camPos.lerp(camWant,1-Math.pow(0.0015,dt));
+  p.cam.position.copy(p.camPos);
+  if(p.shake>0){ const s=p.shake*0.55; p.cam.position.x+=(Math.random()-.5)*s; p.cam.position.y+=(Math.random()-.5)*s; }
+  p.cam.lookAt(p.x+f.x*12,1.2,p.z+f.z*12);
+  p.cam.fov=64+Math.max(0,p.v)*0.16; p.cam.updateProjectionMatrix();
+}
+function syncHud(p,el){
+  el.querySelector('[data-spd]').textContent=Math.round(Math.max(0,p.v)*3.6);
+  const b=el.querySelector('[data-boost]');
+  if(b) b.style.width=Math.round(Math.max(0,Math.min(1,p.boost/BOOST_SECONDS))*100)+'%';
+  const d=el.querySelector('[data-dmg]');
+  d.style.width=p.dmg+'%';
+  d.style.background=p.dmg>75?'#e0392b':(p.dmg>40?'#f5c542':'#57c26a');
+  el.querySelector('[data-prog]').style.width=Math.max(0,Math.min(100,p.z/FINISH*100))+'%';
+  const lives=el.querySelectorAll('.life');
+  for(let i=0;i<lives.length;i++) lives[i].classList.toggle('gone', i<p.wrecks);
+}
+
+// `conn` is supplied by the arcade bridge below. This page no longer
+// opens connections of its own.
+let conn=null, sendAcc=0;
+
+function send(obj){ if(conn&&conn.open){ try{ conn.send(obj); }catch(e){} } }
+
+function packet(p){ return [Math.round(p.x*100)/100,Math.round(p.z*100)/100,Math.round(p.a*1000)/1000,
+  Math.round(p.v*10)/10,Math.round(p.dmg),p.dead?1:0,p.wrecks,Math.round(p.invuln*10)/10,
+  Math.round(p.boost*10)/10]; }
+function applyNet(p,d){
+  const w = (p===me)?0.22:0.55;
+  p.x+=(d[0]-p.x)*w; p.z+=(d[1]-p.z)*w; p.a+=(d[2]-p.a)*w;
+  p.v=d[3]; p.dmg=d[4]; p.wrecks=d[6]; p.invuln=d[7];
+  /* Guarded: an older build sends eight fields, not nine. */
+  if(d.length>8) p.boost=d[8];
+  if(d[5]&&!p.dead){ p.dead=true; p.car.group.visible=false; }
+  if(!d[5]&&p.dead){ p.dead=false; p.x=d[0]; p.z=d[1]; p.car.group.visible=true; }
+}
+function onData(m,from){
+  if(mode==='host'){
+    if(m.t==='i'&&from>0){
+      const held=netInFor(from);
+      held.f=m.k.f; held.b=m.k.b; held.l=m.k.l; held.r=m.k.r; held.h=m.k.h;
+    }
+    return;
+  }
+  if(m.t==='s'){
+    state=m.st; countdown=m.cd; raceTime=m.rt;
+    /* `c` is every car in seat order. Older builds sent `a` and `b`. */
+    if(m.c) for(let i=0;i<m.c.length&&i<players.length;i++) applyNet(players[i],m.c[i]);
+    else { applyNet(P1,m.a); applyNet(P2,m.b); }
+    if(m.ev) m.ev.forEach(function(e){
+      if(e[0]==='x') fxBlast(e[1],e[2],e[3]);
+      else if(e[0]==='b'){ takePad(e[1]); boostChime(); }
+      else fxSpark(e[1],e[2],e[3]);
+    });
+  } else if(m.t==='over'){
+    state='over';
+    const w=ALL[m.w-1]||P1;
+    const t=document.getElementById('resTitle');
+    t.textContent=(w===me)?'You win':(w.ai?('CPU '+w.id+' wins'):('Player '+w.id+' wins'));
+    t.style.color=SEAT_HEX[w.id-1];
+    document.getElementById('resSub').textContent=m.s;
+    document.getElementById('btnAgain').style.display='none';
+    show('scResult');
+  } else if(m.t==='go'){
+    players.forEach(resetPlayer);
+    raceTime=0; countdown=3.999; state='countdown'; lastBeep=99;
+    show(null); layout();
+  }
+}
+
+
+/* ------------------------------------------------------- arcade bridge ---
+   When the arcade launches this game as an online match, the store supplies
+   the connection: the two browsers are already paired over its own WebRTC
+   link, found through an invite link rather than a public broker. PeerJS is
+   not loaded at all on this path.
+
+   The seam is the same one PeerJS filled — an object with `open` and `send`,
+   plus a way to hand incoming messages to onData — so the game itself is
+   unchanged below this line.
+*/
+var EMBEDDED = new URLSearchParams(location.search).get('embed')==='store';
+
+function postToStore(message){
+  try{ parent.postMessage(message, location.origin); }catch(e){}
+}
+
+function beginStoreMatch(info){
+  const capacity=Math.max(2,Math.min(ALL.length,info.capacity||2));
+  setRacers(capacity);
+
+  const seat=Math.max(0,Math.min(capacity-1,info.seat||0));
+  me=players[seat];
+  foe=players[seat===0?1:0];
+
+  /*
+   * Every seat the store did not name as a person is driven by a machine.
+   *
+   * This is what makes a half-full room playable: two friends and two empty
+   * chairs is a four-car race, not a two-car one. Only the host acts on it,
+   * because only the host simulates — a guest is told where every car is.
+   */
+  const humans=info.humanSeats||[0];
+  players.forEach(function(p,i){ p.ai = humans.indexOf(i)===-1; });
+
+  conn = {
+    open:true,
+    send:function(obj){ postToStore({ type:'arcade:send', payload:obj }); },
+    close:function(){ conn.open=false; }
+  };
+
+  if(info.role==='host'){ mode='host'; send({t:'go'}); startRound(); }
+  else { mode='guest'; show(null); layout(); }
+}
+
+/** A guest dropped out. Their car keeps racing, under the machine. */
+function storeSeatGone(seat){
+  const p=players[seat];
+  if(!p) return;
+  p.ai=true;
+  noteEl.textContent='Player '+p.id+' left. A machine took the wheel.';
+}
+
+function storeRivalGone(text){
+  if(conn) conn.open=false;
+  noteEl.textContent=text;
+  if(state!=='menu'&&state!=='over'){
+    state='over';
+    document.getElementById('resTitle').textContent='Rival disconnected';
+    document.getElementById('resTitle').style.color='#f2efe6';
+    document.getElementById('resSub').textContent=text;
+    document.getElementById('btnAgain').style.display='none';
+    show('scResult');
+  }
+}
+
+if(EMBEDDED){
+  // The store shows its own lobby; this page must not offer a second one.
+  show(null);
+  addEventListener('message', function(e){
+    if(e.origin!==location.origin || e.source!==parent) return;
+    var m=e.data;
+    if(!m || typeof m!=='object') return;
+    if(m.type==='arcade:start') beginStoreMatch(m);
+    else if(m.type==='arcade:data') onData(m.payload,m.from|0);
+    else if(m.type==='arcade:gone') storeSeatGone(m.seat|0);
+    else if(m.type==='arcade:bye') storeRivalGone('The host left the race.');
+  });
+  // The click that started the game happened in the parent frame, so this
+  // one needs its own gesture before it may make a sound.
+  var unlockAudio=function(){
+    audio();
+    removeEventListener('keydown',unlockAudio);
+    removeEventListener('pointerdown',unlockAudio);
+  };
+  addEventListener('keydown',unlockAudio);
+  addEventListener('pointerdown',unlockAudio);
+  postToStore({ type:'arcade:ready' });
+}
+
+document.getElementById('btnSolo').onclick=function(){
+  audio();
+  /* A full grid, with only the first car in your hands. */
+  setRacers(4);
+  players.forEach(function(p,i){ p.ai = i>0; });
+  mode='solo'; me=P1; foe=P2;
+  startRound();
+};
+document.getElementById('btnAgain').onclick=function(){
+  if(mode==='host'){ send({t:'go'}); startRound(); }
+  else if(mode==='solo'){ startRound(); }
+};
+document.getElementById('btnMenu').onclick=function(){
+  if(conn){ try{conn.close();}catch(e){} }
+  conn=null; mode='menu'; state='menu'; noteEl.textContent='';
+  // Embedded, the store owns what happens next; standalone, back to the menu.
+  if(EMBEDDED) postToStore({ type:'arcade:exit' }); else show('scMenu');
+  layout();
+};
+document.getElementById('btnMute').onclick=function(){ setMuted(!muted); this.blur(); };
+
+/*
+ * Full screen.
+ *
+ * Asked of `documentElement` rather than the canvas, so the HUD and the touch
+ * pads come with it — fullscreening the canvas alone leaves a race with no
+ * speedometer and, on a phone, no controls.
+ *
+ * When the store runs this page it is inside an iframe, which may only go
+ * fullscreen if the parent allows it; the bridge sets `allow="fullscreen"` on
+ * the frame for exactly this. If the request is refused there is nothing
+ * useful to say, so the button simply stays as it was.
+ */
+function fullscreenElement(){
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+function toggleFullscreen(){
+  const root=document.documentElement;
+  if(fullscreenElement()){
+    const exit=(document.exitFullscreen||document.webkitExitFullscreen);
+    if(exit) exit.call(document);
+    return;
+  }
+  const enter=(root.requestFullscreen||root.webkitRequestFullscreen);
+  if(!enter) return;
+  const asked=enter.call(root);
+  if(asked&&asked.catch) asked.catch(function(){});
+}
+const fullBtn=document.getElementById('btnFull');
+fullBtn.onclick=function(){ toggleFullscreen(); this.blur(); };
+function paintFullButton(){
+  const on=Boolean(fullscreenElement());
+  fullBtn.textContent = on ? '⤡' : '⛶';
+  fullBtn.title = on ? 'Leave full screen' : 'Full screen';
+}
+addEventListener('fullscreenchange',function(){ paintFullButton(); layout(); });
+addEventListener('webkitfullscreenchange',function(){ paintFullButton(); layout(); });
+/* No fullscreen API at all (older iOS Safari): do not offer a dead button. */
+if(!(document.documentElement.requestFullscreen||document.documentElement.webkitRequestFullscreen)){
+  fullBtn.style.display='none';
+}
+addEventListener('keydown',function(e){ if(e.code==='KeyM') setMuted(!muted); });
+(function(){
+  // Old ?room= links pointed at this page's own lobby, which no longer
+  // exists. Hand them to the store, which is where rooms live now.
+  const q=new URLSearchParams(location.search).get('room');
+  if(q && !EMBEDDED){ location.replace('../?join='+encodeURIComponent(q)); }
+})();
+layout();
+
+let last=performance.now(), lastBeep=0;
+function frame(now){
+  requestAnimationFrame(frame);
+  const dt=Math.min((now-last)/1000,0.05); last=now;
+  const authoritative=(mode==='solo'||mode==='host');
+
+  if(state==='countdown'){
+    countdown-=dt;
+    const n=Math.ceil(countdown);
+    if(n!==lastBeep){
+      lastBeep=n;
+      if(n>1) blip(560,0.14,0.22,'square');
+      else if(n===1) blip(940,0.5,0.26,'square');
+    }
+    if(authoritative && countdown<=0) state='race';
+    centerEl.textContent = countdown<=0 ? '' : (countdown<=1 ? 'GO' : String(Math.max(1,Math.ceil(countdown)-1)));
+  } else if(state==='race'){
+    if(authoritative) raceTime+=dt;
+    centerEl.textContent='';
+  }
+
+  if(state!=='menu'){
+    if(authoritative){
+      players.forEach(function(p){ stepCar(p,dt); });
+    /* Host only: it owns who got which pad, the same way it owns every
+       other outcome. Guests apply the 'b' events it sends. */
+    if(mode!=='guest') padsUpdate(dt);
+    else padsRespawn(dt);
+      if(state==='race') collide();
+    } else {
+      stepCar(me,dt);
+      /*
+       * Carry everyone else forward along their last known heading until the
+       * next snapshot corrects them. Without this they visibly stutter at the
+       * snapshot rate; with it they glide and `applyNet` only has to nudge.
+       */
+      players.forEach(function(p){
+        if(p===me) return;
+        if(!p.dead){ const f=fwd(p); p.x+=f.x*p.v*dt; p.z+=f.z*p.v*dt; }
+        if(p.shake>0) p.shake-=dt*1.6;
+      });
+    }
+    players.forEach(function(p){ syncCar(p,dt); });
+    if(mode!=='menu'){
+      /* Yours in the big gauge, everyone else in the small ones. */
+      const own=hudEl(0);
+      if(own) syncHud(me,own);
+      const rivals=players.filter(function(p){ return p!==me && !p.ai; });
+      rivals.forEach(function(r,i){ const hd=hudEl(i+1); if(hd) syncHud(r,hd); });
+    }
+  }
+
+  if(mode==='host'||mode==='guest'){
+    sendAcc+=dt;
+    if(sendAcc>=1/SEND_HZ){
+      sendAcc=0;
+      if(mode==='host'){
+        send({t:'s',st:state,cd:countdown,rt:raceTime,
+              c:players.map(packet),ev:events.splice(0,events.length)});
+      } else {
+        const k=anyPad();
+        send({t:'i',k:{f:k.f,b:k.b,l:k.l,r:k.r,h:k.h}});
+      }
+    }
+  } else events.length=0;
+
+  // ---- sound: engines follow every car, tyres scrub when sliding
+  if(AC){
+    players.forEach(function(p){
+      if(!p.eng) p.eng=makeEngine();
+      const k=(p===me)?anyPad():{f:0};
+      const vol=(state==='menu'||p.dead)?0:((mode==='solo')?0.75:(p===me?1:0.4));
+      engineUpdate(p.eng,p.v,k.f,vol);
+    });
+    let sk=0;
+    const mine=[me];
+    mine.forEach(function(p){
+      if(p.dead) return;
+      const k=anyPad();
+      const fast=Math.abs(p.v)>12;
+      if(fast&&(k.h||Math.abs(p.x)>ROAD_HW-1.2)) sk+=0.10;
+      else if(Math.abs(p.v)>44&&(k.l||k.r)) sk+=0.05;
+    });
+    skidSet(state==='race'?sk:0);
+  }
+
+  players.forEach(function(p){ syncCam(p,dt); });
+  syncMarker(mode==='menu'?P1:me);
+  updateParticles(dt);
+  flashes.forEach(function(f){
+    if(f.t>0){ f.t-=dt; const k=Math.max(0,f.t/0.45);
+      f.mesh.scale.setScalar(2+(1-k)*13); f.mesh.material.opacity=k*0.8;
+      if(f.t<=0) f.mesh.visible=false; }
+  });
+
+  const h=innerHeight;
+  const views = [[(mode==='menu'?P1:me),VPS[0]]];
+  views.forEach(function(t){
+    const p=t[0], v=t[1], glY=h-(v.y+v.h);
+    renderer.setViewport(v.x,glY,v.w,v.h);
+    renderer.setScissor(v.x,glY,v.w,v.h);
+    renderer.setScissorTest(true);
+    renderer.render(scene,p.cam);
+  });
+}
+requestAnimationFrame(frame);
+
+/*
+ * A read-only window onto the simulation, for tests and for anyone debugging a
+ * race from the console. Everything in this file lives inside the IIFE, which
+ * makes the running state invisible from outside — and a car that is quietly
+ * being wrecked looks exactly like a car that is driving badly, so there was no
+ * way to tell those apart without a peephole like this one.
+ */
+window.crashDiagnostics = function(){
+  return {
+    mode:mode, state:state, raceTime:raceTime, countdown:countdown,
+    seat: players.indexOf(me),
+    cars: players.map(function(p){
+      return { id:p.id, ai:p.ai, v:p.v, x:p.x, z:p.z, lane:p.lane, skill:p.skill,
+               dmg:p.dmg, wrecks:p.wrecks, dead:p.dead, out:p.out,
+               boost:p.boost, finished:p.finished };
+    }),
+  };
+};
+
+})();
+</script>
+</body>
+</html>

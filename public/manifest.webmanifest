@@ -1,0 +1,39 @@
+{
+  "name": "The Arcade",
+  "short_name": "Arcade",
+  "description": "A small shelf of browser games you play with friends. Sign in, pick one, send a link.",
+  "id": "/",
+  "start_url": ".",
+  "scope": ".",
+  "display": "fullscreen",
+  "display_override": [
+    "fullscreen",
+    "standalone"
+  ],
+  "background_color": "#0b0718",
+  "theme_color": "#0b0718",
+  "categories": [
+    "games",
+    "entertainment"
+  ],
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
