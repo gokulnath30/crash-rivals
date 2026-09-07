@@ -32,6 +32,14 @@ export class GameRegistry implements GameRegistryPort {
           return ok(createAshenRing());
         }
 
+        case GAME_IDS.trainingSpace: {
+          const { createTrainingSpace } = await import('@games/training-space/index.ts');
+          const { MediaPipeHolisticSource } = await import(
+            '@adapters/pose/mediapipe-holistic.adapter.ts'
+          );
+          return ok(createTrainingSpace({ pose: new MediaPipeHolisticSource(this.logger) }));
+        }
+
         default:
           return fail(failure('game-not-found', 'That game is not on the shelf.'));
       }

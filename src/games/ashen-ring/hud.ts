@@ -30,6 +30,7 @@ export class ArenaHud {
   private readonly announcer: HTMLElement;
   private readonly flash: HTMLElement;
   private readonly legends: [HTMLElement, HTMLElement];
+  private readonly ping: HTMLElement;
   private readonly portraits: [HTMLElement, HTMLElement];
   private readonly loading: HTMLElement;
 
@@ -62,6 +63,7 @@ export class ArenaHud {
     this.announcer = el('div', { className: 'ar__announce', attrs: { 'aria-live': 'polite' } });
     this.flash = el('div', { className: 'ar__flash' });
     this.legends = [el('div', { className: 'ar__legend' }), el('div', { className: 'ar__legend ar__legend--right' })];
+    this.ping = el('div', { className: 'ar__ping' });
     this.loading = el('div', { className: 'ar__loading', attrs: { role: 'status' } });
     this.loading.hidden = true;
 
@@ -120,7 +122,7 @@ export class ArenaHud {
       this.loading,
       el('div', { className: 'ar__hud' }, [
         bars,
-        el('div', { className: 'ar__foot' }, [this.legends[0], this.legends[1]]),
+        el('div', { className: 'ar__foot' }, [this.legends[0], this.ping, this.legends[1]]),
       ]),
       this.announcer,
       this.startPanel,
@@ -169,6 +171,15 @@ export class ArenaHud {
   /** A short word under the name: "guard", "K.O.", nothing. */
   setStance(index: BrawlerIndex, text: string): void {
     if (this.stances[index].textContent !== text) this.stances[index].textContent = text;
+  }
+
+  /**
+   * The round trip to the other player, in an online match. Null hides it,
+   * which is what an offline fight wants.
+   */
+  setPing(ms: number | null): void {
+    const text = ms === null ? '' : `${Math.round(ms)} ms to your rival`;
+    if (this.ping.textContent !== text) this.ping.textContent = text;
   }
 
   /** The key legend for a corner. Pass null to leave it blank. */

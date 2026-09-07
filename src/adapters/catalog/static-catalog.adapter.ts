@@ -13,6 +13,7 @@ import type { GameCatalogPort } from '@app/ports/game-catalog.port.ts';
 export const GAME_IDS = {
   crashRivals: asGameId('crash-rivals'),
   ashenRing: asGameId('ashen-ring'),
+  trainingSpace: asGameId('training-space'),
 } as const;
 
 const GAMES: readonly GameDefinition[] = [
@@ -24,13 +25,13 @@ const GAMES: readonly GameDefinition[] = [
       'A side-on 3D fighting game in the classic shape: two realistic fighters on a raised ' +
       'stone ring, a cinematic camera that breathes with the distance between them, and best ' +
       'of three rounds. Walk, run, jump, punch, kick, sweep, uppercut and guard on a keyboard, ' +
-      'a gamepad or your thumbs. Fight VARRA, or put a friend on the arrow keys or a second ' +
-      'pad and settle it on one screen.',
-    tags: ['fighting', 'duel'],
-    modes: ['solo'],
-    /* A duel. The second seat is the machine, or a friend on the same keyboard. */
+      'a gamepad or your thumbs. Fight VARRA, share a screen with a friend, or send a link and ' +
+      'settle it from opposite ends of the country.',
+    tags: ['fighting', 'duel', 'two-player'],
+    modes: ['solo', 'online-versus'],
+    /* A duel: the machine, a friend beside you, or a friend down a wire. */
     seats: 2,
-    requirements: ['webgl'],
+    requirements: ['webgl', 'network'],
     howToPlay: [
       'Keyboard: A and D walk, W jumps, hold S to guard. Tap forward twice, or hold Shift, to run.',
       'J punches, K kicks (in the air, a flying kick), L sweeps low under a jump, U is the uppercut that catches a jumper.',
@@ -38,6 +39,7 @@ const GAMES: readonly GameDefinition[] = [
       'Phone or tablet: turn it sideways. The left thumb moves (up jumps, down guards); the right thumb has the four limbs and guard.',
       'A guarded blow does a fifth of its damage. Nothing can be guarded in the air.',
       'A second player takes the arrow keys with , . / M, or a second gamepad.',
+      'Invite a friend and you each fight from your own screen; the host runs the match.',
       'Knock them down or have more health when the clock runs out. Two rounds wins.',
     ],
     soloOpponent: 'VARRA',
@@ -48,6 +50,39 @@ const GAMES: readonly GameDefinition[] = [
         'radial-gradient(120% 90% at 20% 15%, rgba(255,106,42,.55), transparent 60%),' +
         'radial-gradient(100% 80% at 85% 35%, rgba(88,201,255,.4), transparent 60%),' +
         'linear-gradient(160deg, #2a160c, #0a0806)',
+    },
+    status: 'playable',
+  },
+  {
+    id: GAME_IDS.trainingSpace,
+    title: 'Training Space',
+    tagline: 'Teach the camera your punches. Nothing to win.',
+    blurb:
+      'A camera watches you, a landmark model reads your body, and the game character copies ' +
+      'it. Two views side by side: your fighter moving as you move, and the tracker’s own ' +
+      'skeleton, hands and face. Record each action a few times — punch, kick, jump, guard, ' +
+      'step — and the room learns to name them as you perform them. The recordings are ' +
+      'movement numbers, never video, and they stay on your machine until you export them.',
+    tags: ['practice', 'camera', 'motion capture'],
+    modes: ['solo'],
+    seats: 1,
+    requirements: ['webgl', 'camera'],
+    howToPlay: [
+      'Stand about two metres back so your hips and feet are in frame.',
+      'Press Record beside an action, wait for the countdown, then perform it once.',
+      'Aim for eight takes of each action, and record Idle first so the room knows what standing still looks like.',
+      'The right-hand view is the landmark model itself — a red point is one it cannot really see.',
+      'Drag the left view to orbit the character; scroll to zoom in on the face.',
+      'Export the dataset as JSON to train a larger model elsewhere.',
+    ],
+    soloOpponent: null,
+    art: {
+      accent: '#58c9ff',
+      accentAlt: '#7ee0c0',
+      poster:
+        'radial-gradient(120% 90% at 25% 15%, rgba(88,201,255,.45), transparent 62%),' +
+        'radial-gradient(100% 80% at 85% 35%, rgba(126,224,192,.28), transparent 60%),' +
+        'linear-gradient(160deg, #1b2430, #0f1116)',
     },
     status: 'playable',
   },

@@ -4,23 +4,26 @@ A small game store for browser games you play with friends.
 Sign in with Google, pick a game, send a link, and the browsers talk directly
 to each other — up to four of them in one room.
 
-Two games on the shelf:
+Three rooms on the shelf:
 
 - **Ashen Ring** — a side-on 3D fighting game in the classic shape: two
   realistic fighters on a raised stone ring, a cinematic camera that breathes
   with the distance between them, best of three. Walk, run, jump, punch, kick,
   sweep, uppercut and guard on a keyboard, a gamepad or your thumbs; the game
-  picks the controls from the device. Fight the machine, or put a friend on the
-  arrow keys or a second pad and settle it on one screen. Motion-captured
-  clips are blended over a procedural animator, and each fighter's face is
-  rendered live beside their health bar.
+  picks the controls from the device. Fight the machine, share a screen with a
+  friend, or send a link and settle it from opposite ends of the country.
+  Motion-captured clips are blended over a procedural animator, and each
+  fighter's face is rendered live beside their health bar.
 - **Crash Rivals** — a four-car drag race down one straight road. Take the
   boost pads, ram the others off it. Race three machines, or fill the grid with
   friends over an invite link; any seat nobody takes is driven by a machine.
+- **Training Space** — no game logic at all. A webcam and MediaPipe's holistic
+  landmarker read your body; the fighter copies you beside the tracker's own
+  skeleton. Record each control a few times and the room learns to name your
+  punches, kicks and jumps as you throw them, then exports the dataset.
 
 Online play is one person per browser: a room of friends, each on their own
-screen. Ashen Ring is the exception, a duel on one screen the way the genre
-has always been played.
+screen. Ashen Ring can also be played the old way, two people at one keyboard.
 
 ---
 
@@ -41,6 +44,10 @@ npm run preview    # serve the built bundle
 npm test           # no browser needed
 npm run lint       # includes the architecture rules below
 ```
+
+The Training Space needs a camera, and browsers only allow one on `https://`
+or `localhost` — that is a browser rule, not a project one. `npm run dev` is
+localhost, so it is fine.
 
 ---
 
@@ -163,8 +170,9 @@ signed in.
 
 The lobby lists the seats as they fill. The host starts whenever they like:
 Crash Rivals gives any seat nobody took to a machine, so a room of two is still
-a four-car race. A room stops admitting people once it is full or once the
-match has started — a latecomer would arrive a lap behind.
+a four-car race, and Ashen Ring seats exactly two because a ring has two
+corners. A room stops admitting people once it is full or once the match has
+started — a latecomer would arrive a lap behind.
 
 Each browser opens a **direct WebRTC connection** and the game runs peer to
 peer. Firestore is used only to find each other and to swap the handshake, and
@@ -217,13 +225,14 @@ point inwards only:
         ┌───────────────────▼──────────────────────────┐
         │  domain/       — rules. no I/O, no libraries │
         │    arena/      brawler, fight, round, AI     │
+        │    motion/     features, recorder, classifier│
         │    lobby/      match, invite codes           │
         │    identity/   players, access grants        │
         └──────────────────────────────────────────────┘
                             ▲ implemented by
         ┌───────────────────┴──────────────────────────┐
         │  adapters/     firebase · webrtc · webaudio  │
-        │                three · platform              │
+        │                mediapipe · three · platform  │
         └──────────────────────────────────────────────┘
                             ▲ wired together by
                      src/main.ts  (composition root)
@@ -342,6 +351,35 @@ can be used at once, and the legend in the corner shows whichever you hold.
 The touch diamond and the gamepad's face buttons share one shape: the heavy
 punch on top, kick at the bottom, punch on the left, sweep on the right.
 
+### Fighting someone else's browser
+
+Press **Invite a friend** and send the link. Both of you get the same view —
+no mirroring, because a fighting game shows both fighters at once — with
+`· you` beside your own name and the round trip in the corner.
+
+The match is host-authoritative, the same bargain the racing game makes. Seat
+0 runs the only copy of the rules that counts; seat 1 sends the buttons it is
+holding and draws what it is told. That costs the guest a round trip of input
+latency and buys a match that cannot disagree with itself about who won. Only
+the host starts a round, so the two browsers can never be in different rounds;
+the guest's **Ready** asks, and the host's press decides.
+
+Two shapes cross the wire, in
+[`protocol.ts`](src/games/ashen-ring/netcode/protocol.ts). What goes every
+frame is hand-packed binary on the unreliable channel — three bytes of buttons
+one way, fifty-seven bytes of fight the other — because a snapshot that has
+been superseded is worse than useless: it arrives after the one that replaced
+it and drags the fight backwards. What goes rarely but must not be lost — a
+hit, a knockdown, a round ending, who you are — is JSON on the reliable
+channel. Between snapshots the guest integrates the bodies from the velocities
+the snapshot carries, which is motion rather than judgement: it keeps thirty
+updates a second from looking like thirty frames a second.
+
+Nothing off the wire is trusted. Every decoder validates and returns null
+rather than throwing, a fighter claimed to be a mile outside the ring is put
+against the wall, and a peer claiming a nine-thousand-damage jab gets it
+clamped. The far end is somebody else's browser.
+
 A punch is quick and short; a kick is slow, long and hits hard. The sweep goes
 under a jump, and the uppercut is the one blow that reaches into one; nothing
 can be guarded in the air. Guarding cuts a blow to a fifth. Knock them down, or
@@ -369,3 +407,47 @@ promise is that a recording never moves a hit: the wind-up is warped so the
 clip's contact frame lands exactly when the rules make the blow live. Walk, run,
 sweep, uppercut, flying kick, hit and knockdown have no recording and stay
 procedural.
+
+---
+
+## Training Space: teaching the camera your controls
+
+Two views of the same moment. On the left, the game's own fighter copying your
+body. On the right, MediaPipe's holistic landmarker exactly as its own samples
+show it: pose, both hands and the face, with a landmark drawn red when the
+model is guessing rather than seeing it.
+
+The loop is: pick an action, press **Record**, perform it once after the
+countdown, repeat about eight times. Recognition improves on the very next
+frame, because the model is a nearest-neighbour vote over your own takes and
+training it is just keeping them. Once two actions have examples, the
+**Recognised now** panel names what you are doing and says whether a fight
+would act on it.
+
+Why nearest neighbours rather than something with weights to fit: with ten
+examples per class it is both the most accurate option available and the only
+one that can explain itself — a match is a particular take you performed. The
+JSON export is the thing to feed a larger model later.
+
+What a recording actually is: a label and 234 numbers. A window of about 0.7
+seconds is resampled to six key frames; each frame is moved to the origin,
+divided by the length of your own torso and turned to face front, so where you
+stand, how tall you are and which way you have turned cannot change the answer.
+No video is stored or sent anywhere, and the dataset stays in this browser
+until you export it.
+
+| Piece | Where |
+| --- | --- |
+| Features, recorder, classifier | [`src/domain/motion/`](src/domain/motion/), tested in [`motion.test.ts`](tests/motion.test.ts) |
+| Camera and the landmarker | [`src/adapters/pose/`](src/adapters/pose/) |
+| The room | [`src/games/training-space/`](src/games/training-space/) |
+
+The GPU delegate refuses the face model on some machines, so the adapter tries
+four configurations and *runs a frame through each* before accepting it —
+creating a landmarker that then fails on every inference is a real thing that
+happens, and it presents as a camera that simply never tracks.
+
+Nothing here writes to any other game. Wiring a trained model into Ashen Ring
+as a camera controller is a separate, deliberate step: the actions it knows are
+already named after that game's controls, so the seam is `ActionName` and
+nothing more.

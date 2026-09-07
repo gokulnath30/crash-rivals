@@ -258,6 +258,13 @@
   justify-content: flex-end;
 }
 
+.ar__ping {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--ar-dim);
+  font-variant-numeric: tabular-nums;
+}
+
 .ar__key {
   display: inline-flex;
   gap: 6px;

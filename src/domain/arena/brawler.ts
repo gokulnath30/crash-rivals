@@ -375,6 +375,44 @@ export class Brawler {
   }
 
   /**
+   * Takes on someone else's account of this fighter, wholesale.
+   *
+   * Used by the guest in an online match, which runs no rules of its own: the
+   * host's snapshot is the truth, and this is how it lands. The attack is
+   * rebuilt from the stance rather than sent, because the stance already
+   * implies which one it is and the animator needs a spec to time the swing
+   * against. It is marked as having struck, so a replayed pose can never
+   * decide a hit on the guest's screen.
+   */
+  adopt(state: {
+    x: number;
+    y: number;
+    facing: 1 | -1;
+    stance: Stance;
+    stanceTime: number;
+    stride: -1 | 0 | 1;
+    hp: number;
+    velocity: number;
+    verticalVelocity: number;
+  }): void {
+    this.x = state.x;
+    this.y = state.y;
+    this.facing = state.facing;
+    this.stance = state.stance;
+    this.stanceTime = state.stanceTime;
+    this.stride = state.stride;
+    this.hp = state.hp;
+    this.velocity = state.velocity;
+    this.verticalVelocity = state.verticalVelocity;
+    this.attack = isAttack(state.stance)
+      ? { name: state.stance, spec: ATTACKS[state.stance], struck: true }
+      : null;
+    // Long enough that a flinch plays out rather than snapping straight back;
+    // the next snapshot is what really decides when it ends.
+    this.staggerFor = ATTACKS.punch.stagger;
+  }
+
+  /**
    * Moves along the line, falls under gravity, and wears off any shove.
    * Walls are the fight's job.
    */

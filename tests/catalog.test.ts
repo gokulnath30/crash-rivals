@@ -38,15 +38,18 @@ describe('the catalogue', () => {
   describe('Ashen Ring', () => {
     const ring = catalog.find(GAME_IDS.ashenRing);
 
-    it('is on the shelf and offers solo play', () => {
+    it('is on the shelf and offers both solo and invited play', () => {
       expect(ring).not.toBeNull();
-      expect(ring?.modes).toEqual(['solo']);
+      expect(ring?.modes).toEqual(['solo', 'online-versus']);
     });
 
-    it('names its machine opponent and needs no camera or network', () => {
+    it('seats exactly two, because a duel has two corners', () => {
+      expect(ring?.seats).toBe(2);
+    });
+
+    it('names its machine opponent and needs no camera', () => {
       expect(ring?.soloOpponent).not.toBeNull();
       expect(ring?.requirements).not.toContain('camera');
-      expect(ring?.requirements).not.toContain('network');
     });
   });
 });

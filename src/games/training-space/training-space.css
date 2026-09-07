@@ -1,0 +1,414 @@
+/* The training room's own skin. Scoped under .ts so it cannot leak out. */
+
+.ts {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 1fr minmax(320px, 30%);
+  overflow: hidden;
+  font-family: var(--font-body);
+  color: var(--ts-bone);
+  background: var(--ts-ink);
+  --ts-ink: #0f1116;
+  --ts-panel: #171a22;
+  --ts-line: rgb(255 255 255 / 12%);
+  --ts-bone: #e8ecf5;
+  --ts-dim: rgb(232 236 245 / 55%);
+  --ts-accent: #58c9ff;
+}
+
+/* ------------------------------------------------------- the two views */
+
+.ts__stage {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.ts__view {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  background: #000;
+  border: 1px solid var(--ts-line);
+  border-radius: 10px;
+}
+
+.ts__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+
+.ts__canvas:active {
+  cursor: grabbing;
+}
+
+.ts__camera {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* Mirrored, so leaning left on screen matches leaning left in the room. */
+.ts__video,
+.ts__overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.ts__video {
+  transform: scaleX(-1);
+}
+
+.ts__view-label {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 16px 12px 8px;
+  background: linear-gradient(transparent, rgb(0 0 0 / 78%));
+  pointer-events: none;
+}
+
+.ts__view-label b {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ts__view-label span {
+  font-size: 11px;
+  color: var(--ts-dim);
+}
+
+/* ------------------------------------------------------------- the rail */
+
+.ts__rail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 14px;
+  overflow-y: auto;
+  background: var(--ts-panel);
+  border-left: 1px solid var(--ts-line);
+}
+
+.ts__rail-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ts__rail-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ts__blurb {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ts-dim);
+}
+
+.ts__label {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--ts-dim);
+  text-transform: uppercase;
+}
+
+.ts__status {
+  min-height: 1.3em;
+  font-size: 12.5px;
+  color: var(--ts-accent);
+}
+
+/* --------------------------------------------------------- a live take */
+
+.ts__take {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  padding: 14px;
+  text-align: center;
+  background: rgb(88 201 255 / 8%);
+  border: 1px solid rgb(88 201 255 / 35%);
+  border-radius: 10px;
+}
+
+.ts__take[hidden] {
+  display: none;
+}
+
+.ts__count {
+  font-family: var(--font-display);
+  font-size: 44px;
+  line-height: 1;
+  color: var(--ts-accent);
+}
+
+.ts__take-line {
+  font-size: 13px;
+}
+
+.ts__take-track {
+  width: 100%;
+  height: 6px;
+  overflow: hidden;
+  background: rgb(255 255 255 / 12%);
+  border-radius: 3px;
+}
+
+.ts__take-track i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--ts-accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+/* ------------------------------------------------- live recognition */
+
+.ts__verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: rgb(255 255 255 / 4%);
+  border: 1px solid var(--ts-line);
+  border-radius: 10px;
+}
+
+.ts__verdict-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.ts__verdict-head b {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ts__verdict-track {
+  height: 8px;
+  overflow: hidden;
+  background: rgb(255 255 255 / 12%);
+  border-radius: 4px;
+}
+
+.ts__verdict-track i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--ts-accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.12s linear;
+}
+
+.ts__verdict span {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ts-dim);
+}
+
+/* ------------------------------------------------------ action list */
+
+.ts__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ts__chip {
+  --chip-accent: var(--ts-accent);
+
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: rgb(255 255 255 / 4%);
+  border: 1px solid var(--ts-line);
+  border-left: 3px solid var(--chip-accent);
+  border-radius: 8px;
+}
+
+.ts__chip.is-empty {
+  border-left-color: rgb(255 255 255 / 20%);
+}
+
+.ts__chip.is-live {
+  background: color-mix(in srgb, var(--chip-accent) 18%, transparent);
+  border-color: var(--chip-accent);
+}
+
+.ts__chip-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ts__chip-main b {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ts__chip-main em {
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.4;
+  color: var(--ts-dim);
+}
+
+.ts__chip-side {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  align-items: center;
+}
+
+.ts__chip-side .btn {
+  padding: 5px 9px;
+  font-size: 11px;
+}
+
+.ts__chip-count {
+  min-width: 26px;
+  font-family: var(--font-display);
+  font-size: 17px;
+  color: var(--chip-accent);
+  text-align: right;
+}
+
+.ts__chip.is-ready .ts__chip-count::after {
+  content: ' ✓';
+  font-size: 11px;
+}
+
+/* --------------------------------------------------------- dataset */
+
+.ts__data {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--ts-line);
+}
+
+.ts__total {
+  font-size: 12px;
+  color: var(--ts-dim);
+}
+
+.ts__data-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ts__data-row .btn {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.ts__file {
+  display: none;
+}
+
+/* ------------------------------------------------------------ gate */
+
+.ts__gate {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  padding: 24px;
+  overflow-y: auto;
+  background: rgb(15 17 22 / 94%);
+  place-items: center;
+}
+
+.ts__gate[hidden] {
+  display: none;
+}
+
+.ts__gate-inner {
+  max-width: 520px;
+  text-align: center;
+}
+
+.ts__gate-inner h2 {
+  margin: 0 0 10px;
+  font-family: var(--font-display);
+  font-size: clamp(32px, 6vw, 54px);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ts__gate-inner p {
+  margin: 0 0 18px;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--ts-dim);
+}
+
+.ts__gate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+/* Narrow screens: the views stack above the rail rather than beside it. */
+@media (width <= 900px) {
+  .ts {
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+
+  .ts__stage {
+    grid-template-rows: 220px 220px;
+  }
+
+  .ts__rail {
+    border-top: 1px solid var(--ts-line);
+    border-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ts__verdict-track i {
+    transition: none;
+  }
+}
